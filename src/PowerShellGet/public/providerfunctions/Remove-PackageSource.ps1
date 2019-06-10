@@ -1,5 +1,4 @@
-function Remove-PackageSource
-{
+function Remove-PackageSource {
     param
     (
         [string]
@@ -12,24 +11,20 @@ function Remove-PackageSource
 
     $ModuleSourcesToBeRemoved = @()
 
-    foreach ($moduleSourceName in $Name)
-    {
-        if($request.IsCanceled)
-        {
+    foreach ($moduleSourceName in $Name) {
+        if ($request.IsCanceled) {
             return
         }
 
         # Check if $Name contains any wildcards
-        if(Test-WildcardPattern $moduleSourceName)
-        {
+        if (Test-WildcardPattern $moduleSourceName) {
             $message = $LocalizedData.RepositoryNameContainsWildCards -f ($moduleSourceName)
             Write-Error -Message $message -ErrorId "RepositoryNameContainsWildCards" -Category InvalidOperation -TargetObject $moduleSourceName
             continue
         }
 
         # Check if the specified module source name is in the registered module sources
-        if(-not $script:PSGetModuleSources.Contains($moduleSourceName))
-        {
+        if (-not $script:PSGetModuleSources.Contains($moduleSourceName)) {
             $message = $LocalizedData.RepositoryNotFound -f ($moduleSourceName)
             Write-Error -Message $message -ErrorId "RepositoryNotFound" -Category InvalidOperation -TargetObject $moduleSourceName
             continue
@@ -42,6 +37,9 @@ function Remove-PackageSource
 
     # Remove the module source
     $ModuleSourcesToBeRemoved | Microsoft.PowerShell.Core\ForEach-Object { $null = $script:PSGetModuleSources.Remove($_) }
+
+    # remove repo as a nuget source
+    nuget sources remove -name $Name
 
     # Persist the module sources
     Save-ModuleSources
