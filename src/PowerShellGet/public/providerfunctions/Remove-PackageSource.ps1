@@ -38,8 +38,6 @@ function Remove-PackageSource {
     # Remove the module source
     $ModuleSourcesToBeRemoved | Microsoft.PowerShell.Core\ForEach-Object { $null = $script:PSGetModuleSources.Remove($_) }
 
-    # remove repo as a nuget source
-    nuget sources remove -name $Name
 
     # Persist the module sources
     Save-ModuleSources

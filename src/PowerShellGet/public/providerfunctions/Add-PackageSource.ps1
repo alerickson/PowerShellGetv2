@@ -514,8 +514,6 @@ function Add-PackageSource {
         Save-ModuleSources
     }
 
-    # add repo as a nuget source
-    nuget sources add -name $Name -source $Location
 
     # return the package source object.
     Write-Output -InputObject (New-PackageSourceFromModuleSource -ModuleSource $moduleSource)
