@@ -2,10 +2,10 @@
 #
 # Copyright (c) Microsoft Corporation, 2019
 
-Import-Module "$PSScriptRoot\PSGetTestUtils.psm1" -WarningAction SilentlyContinue
+#Import-Module "$PSScriptRoot\PSGetTestUtils.psm1" -WarningAction SilentlyContinue
 
 $PSGalleryName = 'PSGallery'
-$PSGalleryLocation = 'https://www.powershellgallery.com/api/v3'
+$PSGalleryLocation = 'https://www.powershellgallery.com/api/v2'
 
 $TestRepoName = 'TestRepoName'
 $TestRepoURL = 'https://api.poshtestgallery.com/v3/index.json'
@@ -27,22 +27,11 @@ if (-not (Test-Path -LiteralPath $tmpdir2)) {
     $TestRepoLocalURL2 = $tmpdir2
 }
 
-
-
-
-#finally {
+# remember to delete these files
 #    Remove-Item -LiteralPath $tmpdir -Force -Recurse
 #}
 
 
-# probably need to get rid of all these
-
-#$SourceLocation = 'https://www.poshtestgallery.com/api/v2'
-#$SourceLocation2 = 'https://www.poshtestgallery.com/api/v2/'
-#$PublishLocation = 'https://www.poshtestgallery.com/api/v2/package'
-#$ScriptSourceLocation = 'https://www.poshtestgallery.com/api/v2/items/psscript'
-#$ScriptPublishLocation = 'https://www.poshtestgallery.com/api/v2/package'
-#$TestRepositoryName = 'PSTestGallery'
 
 
 #####################################
@@ -51,6 +40,9 @@ if (-not (Test-Path -LiteralPath $tmpdir2)) {
 
 Describe 'Test Register-PSResourceRepository' -tags 'BVT' {
 
+    BeforeAll {
+
+    }
     AfterAll {
         Unregister-PSResourceRepository -Name $PSGalleryName -ErrorAction SilentlyContinue
         Unregister-PSResourceRepository -Name $TestRepoName -ErrorAction SilentlyContinue
@@ -278,7 +270,7 @@ Describe 'Test Set-PSResourceRepository' -tags 'BVT', 'InnerLoop' {
     }
 
     BeforeEach {
-        Register-PSResourceRepository -PSGallery
+        Register-PSResourceRepository -PSGallery -ErrorAction SilentlyContinue
     }
 
     It 'Should set PSGallery to a trusted installation policy' {
@@ -315,23 +307,27 @@ Describe 'Test Set-PSResourceRepository' -tags 'BVT', 'InnerLoop' {
 
 Describe 'Test Set-PSResourceRepository with hashtable parameters' -tags 'BVT', 'InnerLoop' {
 
+    AfterAll {
+    }
     BeforeAll {
     }
 
     BeforeEach {
-        #TODO
+        Unregister-PSResourceRepository -Name $PSGalleryName -ErrorAction SilentlyContinue
+        Unregister-PSResourceRepository -Name $TestRepoName -ErrorAction SilentlyContinue
+        Unregister-PSResourceRepository -Name $TestRepoName2 -ErrorAction SilentlyContinue
+        Unregister-PSResourceRepository -Name $TestRepoLocalName -ErrorAction SilentlyContinue
+        Unregister-PSResourceRepository -Name $TestRepoLocalName2 -ErrorAction SilentlyContinue
+
+        Register-PSResourceRepository -PSGallery -Trusted
+        Register-PSResourceRepository -Name $TestRepoName -URL $TestRepoURL -Trusted
+        Register-PSResourceRepository -Name $TestRepoName2 -URL $TestRepoURL2 -Priority 15
+        Register-PSResourceRepository -Name $TestRepoLocalName -URL $TestRepoLocalURL
+        Register-PSResourceRepository -Name $TestRepoLocalName2 -URL $TestRepoLocalURL2
     }
 
+
     It 'Should set repository with given hashtable parameters' {
-        $paramRegisterPSResourceRepository = @{
-            Name     = $TestRepoName
-            URL      = $TestRepoURL
-            Trusted  = $True
-            Priority = 5
-        }
-
-        Register-PSRepository @paramRegisterPSResourceRepository -ErrorAction SilentlyContinue
-
         $paramSetPSResourceRepository = @{
             Name     = $TestRepoName
             URL      = $TestRepoURL2
@@ -348,15 +344,9 @@ Describe 'Test Set-PSResourceRepository with hashtable parameters' -tags 'BVT', 
     }
 
     It 'Should set multiple repositories' {
-        Register-PSResourceRepository -Repositories @(
-            @{ Name = $TestRepoName; URL = $TestRepoURL; Priority = 15 }
-            @{ Name = $TestRepoLocalName; URL = $TestRepoLocalURL }
-            @{ PSGallery = $true; Trusted = $true }
-        )
-
         $repositories = @{
-            @{ Name = $TestRepoName; URL = $TestRepoURL2; Priority = 9 }
-            @{ Name = $TestRepoLocalName; URL = $TestRepoLocalURL2; Trusted:$True }
+            @{ Name = $TestRepoName2; URL = $TestRepoURL; Priority = 9 }
+            @{ Name = $TestRepoLocalName; URL = $TestRepoLocalURL2; Trusted =$True }
             @{ Name = $PSGalleryName; Trusted = $False }
         }
 
@@ -364,17 +354,141 @@ Describe 'Test Set-PSResourceRepository with hashtable parameters' -tags 'BVT', 
 
         $repos = Get-PSResourceRepository
         $repos.Count | Should be 3
-        $repo1 = Get-PSResourceRepository $TestRepoName
-        $repo1.URL | Should be $TestRepoURL2
+        $repo1 = Get-PSResourceRepository $TestRepoName2
+        $repo1.URL | Should be $TestRepoURL
+        $repo.Trusted | Should be $False
         $repo1.Priority | Should be 9
 
         $repo2 = Get-PSResourceRepository $TestRepoLocalName
         $repo2.URL | Should be $TestRepoLocalURL2
+        $repo.Trusted | Should be $True
         $repo2.Priority | Should be 0
 
         $repo3 = Get-PSResourceRepository $PSGalleryName
         $repo3.URL | Should be $PSGalleryLocation
+        $repo.Trusted | Should be $False
         $repo3.Priority | Should be 50
     }
 
+}
+
+
+
+################################
+### Get-PSResourceRepository ###
+################################
+Describe 'Test Get-PSResourceRepository' -tags 'BVT', 'InnerLoop' {
+
+    BeforeAll {
+    }
+
+    AfterAll {
+    }
+
+    BeforeEach {
+        Register-PSResourceRepository -PSGallery -Trusted -ErrorAction SilentlyContinue
+        Register-PSResourceRepository -Name $TestRepoName -URL $TestRepoURL -Trusted -ErrorAction SilentlyContinue
+        Register-PSResourceRepository -Name $TestRepoName2 -URL $TestRepoURL2 -Priority 15 -ErrorAction SilentlyContinue
+        Register-PSResourceRepository -Name $TestRepoLocalName -URL $TestRepoLocalURL -ErrorAction SilentlyContinue
+        Register-PSResourceRepository -Name $TestRepoLocalName2 -URL $TestRepoLocalURL2 -ErrorAction SilentlyContinue
+    }
+
+    It 'Should get PSGallery repository' {
+        $repo = Get-PSResourceRepository $PSGalleryName
+        $repo.URL | should be $PSGalleryLocation
+        $repo.Trusted | should be $false
+        $repo.Priority | should be 50
+    }
+
+    It 'Should get test repository' {
+        $repo = Get-PSResourceRepository $TestRepoName
+        $repo.URL | should be $TestRepoURL
+        $repo.Trusted | should be $true
+        $repo.Priority | should be 0
+    }
+
+    It 'Should get multiple repositories' {
+        $repos = Get-PSResourceRepository $PSGalleryName, $TestRepoName, $TestRepoLocalName
+
+        $repos.Count | Should be 3
+
+        $PSGalleryName | should -BeIn $repos.Name
+        $TestRepoName | should -BeIn $repos.Name
+        $TestRepoLocalName | should -BeIn $repos.Name
+
+        $PSGalleryLocation | should -BeIn $repos.URL
+        $TestRepoURL | should -BeIn $repos.URL
+        $TestRepoLocalURL | should -BeIn $repos.URL
+
+        0 | should -BeIn $repos.Priority
+        50 | should -BeIn $repos.Priority
+    }
+
+    It 'Should get all repositories' {
+        $repos = Get-PSResourceRepository
+
+        $repos.Count | Should be 5
+
+        $PSGalleryName | should -BeIn $repos.Name
+        $TestRepoName | should -BeIn $repos.Name
+        $TestRepoName2 | should -BeIn $repos.Name
+        $TestRepoLocalName | should -BeIn $repos.Name
+        $TestRepoLocalName2 | should -BeIn $repos.Name
+
+        $PSGalleryLocation | should -BeIn $repos.URL
+        $TestRepoURL | should -BeIn $repos.URL
+        $TestRepoURL2 | should -BeIn $repos.URL
+        $TestRepoLocalURL | should -BeIn $repos.URL
+        $TestRepoLocalURL2 | should -BeIn $repos.URL
+
+        0 | should -BeIn $repos.Priority
+        50 | should -BeIn $repos.Priority
+        15 | should -BeIn $repos.Priority
+    }
+}
+
+
+
+#######################################
+### Unregister-PSResourceRepository ###
+#######################################
+
+Describe 'Test Unregister-PSResourceRepository' -tags 'BVT' {
+
+    BeforeAll {
+
+    }
+    AfterAll {
+        Unregister-PSResourceRepository -Name $PSGalleryName -ErrorAction SilentlyContinue
+        Unregister-PSResourceRepository -Name $TestRepoName -ErrorAction SilentlyContinue
+        Unregister-PSResourceRepository -Name $TestRepoName2 -ErrorAction SilentlyContinue
+        Unregister-PSResourceRepository -Name $TestRepoLocalName -ErrorAction SilentlyContinue
+        Unregister-PSResourceRepository -Name $TestRepoLocalName2 -ErrorAction SilentlyContinue
+    }
+
+    BeforeEach {
+       Register-PSResourceRepository -PSGallery -Trusted -ErrorAction SilentlyContinue
+       Register-PSResourceRepository -Name $TestRepoName -URL $TestRepoURL -Trusted -ErrorAction SilentlyContinue
+       Register-PSResourceRepository -Name $TestRepoName2 -URL $TestRepoURL2 -Priority 15 -ErrorAction SilentlyContinue
+       Register-PSResourceRepository -Name $TestRepoLocalName -URL $TestRepoLocalURL -ErrorAction SilentlyContinue
+       Register-PSResourceRepository -Name $TestRepoLocalName2 -URL $TestRepoLocalURL2 -ErrorAction SilentlyContinue
+    }
+
+    ### Unregistering the PowerShell Gallery
+    It 'Should unregister the default PSGallery' {
+        Unregister-PSResourceRepository $PSGalleryName
+
+        $repo = Get-PSResourceRepository $PSGalleryName -ErrorVariable ev -ErrorAction SilentlyContinue
+        $repo | Should -BeNullOrEmpty
+        $ev[0].FullyQualifiedErrorId | Should be "Unable to find repository 'PSGallery'. Use Get-PSResourceRepository to see all available repositories."
+    }
+
+    It 'Should unregister multiple repositories' {
+        Unregister-PSResourceRepository $TestRepoName, $TestRepoName2, $TestRepoLocalName
+
+        $repos = Get-PSResourceRepository $TestRepoName, $TestRepoName2, $TestRepoLocalName -ErrorVariable ev -ErrorAction SilentlyContinue
+        $repos | Should -BeNullOrEmpty
+        $ev[0].FullyQualifiedErrorId | Should be "Unable to find repository 'PSGallery'. Use Get-PSResourceRepository to see all available repositories."
+
+    }
 }
