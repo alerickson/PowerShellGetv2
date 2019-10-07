@@ -34,7 +34,8 @@ function Register-PSResourceRepository {
         [Hashtable]
         $Repositories,
 
-        [Parameter()]
+        [Parameter(ParameterSetName = 'NameParameterSet')]
+        [Parameter(ParameterSetName = 'PSGalleryParameterSet')]
         [Switch]
         $Trusted,
 
@@ -50,7 +51,7 @@ function Register-PSResourceRepository {
         [Parameter()]
         [ValidateRange(0, 50)]
         [int]
-        $Priority = 25
+        $Priority = 50
     )
 
     begin { }
@@ -145,8 +146,7 @@ function Set-PSResourceRepository {
         [string]
         $Name,
 
-        [Parameter(ValueFromPipelineByPropertyName = $true,
-            Position = 1)]
+        [Parameter(ValueFromPipelineByPropertyName = $true)]
         [ValidateNotNullOrEmpty()]
         [Uri]
         $URL,
@@ -155,7 +155,7 @@ function Set-PSResourceRepository {
         [PSCredential]
         $Credential,
 
-        [Parameter()]
+        [Parameter(ParameterSetName = "NameParameterSet")]
         [Switch]
         $Trusted,
 
@@ -168,7 +168,7 @@ function Set-PSResourceRepository {
         [PSCredential]
         $ProxyCredential,
 
-        [Parameter(ValueFromPipelineByPropertyName = $true,
+        [Parameter(Mandatory = $true, ValueFromPipelineByPropertyName = $true,
             ParameterSetName = 'RepositoriesParameterSet')]
         [ValidateNotNullOrEmpty()]
         [Hashtable]

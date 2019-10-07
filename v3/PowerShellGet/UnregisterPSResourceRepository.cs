@@ -3,24 +3,12 @@
 // Licensed under the MIT License.
 
 
+using Microsoft.PowerShell.PowerShellGet.RepositorySettings;
 using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Collections.Specialized;
-using System.Diagnostics.CodeAnalysis;
 using System.Management.Automation;
-using System.Management.Automation.Internal;
-using System.Net;
-using System.Text;
-using System.Globalization;
-using NuGet.Configuration;
-using Microsoft.PowerShellGet.Repository;
 
-using NuGet.Configuration;
-using Microsoft.PowerShell.Commands.Internal.Format;
-using System.Xml.Linq;
 
-namespace Microsoft.PowerShellGet.Commands
+namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 {
 
     /// <summary>
@@ -30,19 +18,20 @@ namespace Microsoft.PowerShellGet.Commands
     /// It returns nothing.
     /// </summary>
 
-    [Cmdlet(VerbsLifecycle.Register, "PSResourceRepository", DefaultParameterSetName = "NameParameterSet", SupportsShouldProcess = true,
+    [Cmdlet(VerbsLifecycle.Unregister, "PSResourceRepository", DefaultParameterSetName = "NameParameterSet", SupportsShouldProcess = true,
         HelpUri = "<add>", RemotingCapability = RemotingCapability.None)]
     public sealed
     class UnregisterPSResourceRepository : PSCmdlet
     {
-        private string PSGalleryRepoName = "PSGallery";
+       // private string PSGalleryRepoName = "PSGallery";
 
         /// <summary>
         /// Specifies the desired name for the repository to be registered.
         /// </summary>
-        [Parameter(Mandatory = true, Position = 0, ParameterSetName = "NameParameterSet")]
+        [Parameter(Mandatory= true, Position = 0, ValueFromPipeline = true,
+            ValueFromPipelineByPropertyName = true, ParameterSetName = "NameParameterSet")]
         [ValidateNotNullOrEmpty]
-        public string Name
+        public string[] Name
         {
             get
             { return _name; }
@@ -50,37 +39,26 @@ namespace Microsoft.PowerShellGet.Commands
             set
             { _name = value; }
         }
-        private string _name;
-
-       
+        private string[] _name;
 
 
-        /// <summary>
-        /// </summary>
-        protected override void BeginProcessing()
-        {
-            /// Currently no processing for begin
-        }
+
 
         /// <summary>
         /// </summary>
         protected override void ProcessRecord()
         {
+            var r = new RespositorySettings();
 
-            
-        }
-
-
-        /// <summary>
-        /// </summary>
-        protected override void EndProcessing()
-        {
-            /// Currently no processing for end
+            // need to check if name is null?
+            try
+            {
+                r.Remove(_name);
+            }
+            catch (Exception e){
+                throw new Exception(e.Message);
+            }
         }
 
     }
-
-
-
-
 }

@@ -1,21 +1,12 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Collections.Specialized;
-using System.Diagnostics.CodeAnalysis;
 using System.Management.Automation;
-using System.Management.Automation.Internal;
-using System.Net;
-using System.Text;
-
-using Microsoft.PowerShell.Commands.Internal.Format;
+using Microsoft.PowerShell.PowerShellGet.RepositorySettings;
 
 
 
-namespace Microsoft.PowerShellGet.Commands
+namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 {
     /// <summary>
     /// The Register-PSResourceRepository cmdlet.
@@ -32,7 +23,7 @@ namespace Microsoft.PowerShellGet.Commands
         /// </summary>
         [Parameter(Position = 0, ValueFromPipeline = true,
             ValueFromPipelineByPropertyName = true, ParameterSetName = "NameParameterSet")]
-        [ValidateNotNullOrEmpty]
+       [ValidateNotNullOrEmpty]
         public string[] Name
         {
             get
@@ -41,56 +32,22 @@ namespace Microsoft.PowerShellGet.Commands
             set
             { _name = value; }
         }
-        private string[] _name;
+        private string[] _name = new string[0];
 
-
-
-
-        /// <summary>
-        /// </summary>
-        protected override void BeginProcessing()
-        {
-            // 1. find xml
-            //Microsoft.PowerShell.Management\Join-Path -Path $script:PSGetAppLocalPath -ChildPath "PSRepositories.xml"
-        }
 
         /// <summary>
         /// </summary>
         protected override void ProcessRecord()
         {
+             var r = new RespositorySettings();
 
+             var listOfRepositories = r.Read(_name);
 
-
-            if (_name != null && _name.Length > 0)
-                foreach (string repo in _name)
-                {
-                    //Find and return repository
-                    /*
-                    PSResourceRepository = [PSCustomObject] @{
-                        Name = $Name
-                        URL = "placeholder-for-url"
-                        Trusted = "placeholder-for-trusted"
-                        Priority = "placeholder-for-priority"
-                    }
-                    */
-
-
-                    //return $PSResourceRepository
-
-                    // consider making a psresourcerepository class
-                }
-            else
+            /// Print out repos
+            foreach (var repo in listOfRepositories)
             {
-
-
+                WriteObject(repo);
             }
         }
-        /// <summary>
-        /// </summary>
-        protected override void EndProcessing()
-        {
-            /// Currently no processing for end
-        }
-
     }
 }
