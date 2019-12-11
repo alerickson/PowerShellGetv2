@@ -1,4 +1,19 @@
 # Changelog
+### 2.2.2
+Bug Fix
+
+- Update casing of output for DSCResources
+
+### 2.2.1
+Bug Fix
+
+- Allow DscResources to work on case sensitive platforms (#521)
+- Fix for failure to return credential provider when using private feeds (#521)
+
+## 2.2
+Bug Fix
+
+- Fix for prompting for credentials when passing in -Credential parameter when using Register-PSRepository
 
 ## 2.1.5
 
