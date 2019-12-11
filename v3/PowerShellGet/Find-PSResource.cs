@@ -569,11 +569,738 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
 
 
+        /*
+                    IEnumerable<IPackageSearchMetadata> enumerable;
+
+                    List<IEnumerable<IPackageSearchMetadata>> list3;
+                    List<IEnumerable<IPackageSearchMetadata>> list4;
+
+                    List<IEnumerable<IPackageSearchMetadata>> foundPackages = new List<IEnumerable<IPackageSearchMetadata>>();
+
+                    FindLocalPackagesResourceV2 localResource = new FindLocalPackagesResourceV2(repositoryUrl);
+
+                    LocalPackageSearchResource resource = new LocalPackageSearchResource(localResource);
+                    LocalPackageMetadataResource resource2 = new LocalPackageMetadataResource(localResource);
+
+                    SearchFilter filter = new SearchFilter(_prerelease);
+                    SourceCacheContext context = new SourceCacheContext();
+
+                    if (_moduleName == null)
+                    {
+
+                    }
+                    else
+                    {
+                        // Take(1)
+                        var metadatapkgs = resource2.GetMetadataAsync(_moduleName, _prerelease, false, context, NullLogger.Instance, CancellationToken.None).GetAwaiter().GetResult().FirstOrDefault();
+
+
+                        var list3 = new List<IEnumerable<IPackageSearchMetadata>>();
+
+
+                        char[] delimiters = new char[] { ' ', ',' };
+                        char[] tagsArr;
+
+
+                }
+        */
 
 
 
 
 
+
+
+        private List<IEnumerable<IPackageSearchMetadata>> GetPackagesHelper(string repositoryUrl, string name, PackageSearchResource pkgSearchResource, PackageMetadataResource pkgMetadataResource, SearchFilter searchFilter, SourceCacheContext srcContext)
+        {
+            IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata> enumerable3;
+            List<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>> list3;
+            string[] strArray;
+            string[] strArray2;
+            int num;
+            List<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>> list4;
+            string[] strArray4;
+            int num3;
+            string[] strArray6;
+            int num5;
+            string[] strArray8;
+            int num7;
+            string[] strArray10;
+            int num9;
+            string[] strArray12;
+            int num11;
+            string str2 = (typeTags + tags).Trim();
+            List<IEnumerable<IPackageSearchMetadata>> foundPackages = new List<IEnumerable<IPackageSearchMetadata>>();
+            IEnumerable<Lazy<INuGetResourceProvider>> enumerable = FactoryExtensionsV3.GetCoreV3(NuGet.Protocol.Core.Types.Repository.Provider);
+
+
+
+
+            }
+            NuGet.Protocol.Core.Types.SourceRepository repository = new NuGet.Protocol.Core.Types.SourceRepository(source, enumerable);
+            NuGet.Protocol.Core.Types.PackageSearchResource result = repository.GetResourceAsync<NuGet.Protocol.Core.Types.PackageSearchResource>().GetAwaiter().GetResult();
+            NuGet.Protocol.Core.Types.PackageMetadataResource resource = repository.GetResourceAsync<NuGet.Protocol.Core.Types.PackageMetadataResource>().GetAwaiter().GetResult();
+            NuGet.Protocol.Core.Types.SearchFilter filter = new NuGet.Protocol.Core.Types.SearchFilter(this._prerelease);
+            NuGet.Protocol.Core.Types.SourceCacheContext context = new NuGet.Protocol.Core.Types.SourceCacheContext();
+            NuGet.Protocol.Core.Types.PackageSearchResource resource3 = new NuGet.Protocol.Core.Types.SourceRepository(new PackageSource(repositoryUrl), FactoryExtensionsV3.GetCoreV3(NuGet.Protocol.Core.Types.Repository.Provider)).GetResourceAsync<NuGet.Protocol.Core.Types.PackageSearchResource>().GetAwaiter().GetResult();
+           
+        
+        
+        if (this._moduleName == null)
+            {
+                goto TR_0076;
+            }
+            else
+            {
+                enumerable3 = Enumerable.Take<NuGet.Protocol.Core.Types.IPackageSearchMetadata>(resource.GetMetadataAsync(this._moduleName, this._prerelease, false, context, NullLogger.Instance, CancellationToken.get_None()).GetAwaiter().GetResult(), 1);
+                list3 = new List<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>>();
+                char[] chArray1 = new char[] { ' ', ',' };
+                char[] chArray = chArray1;
+                strArray = Enumerable.FirstOrDefault<NuGet.Protocol.Core.Types.IPackageSearchMetadata>(enumerable3).Tags.Split(chArray, (StringSplitOptions)StringSplitOptions.RemoveEmptyEntries);
+                if (((this._type == null) || !Enumerable.Contains<string>(this._type, "Command", (IEqualityComparer<string>)StringComparer.get_OrdinalIgnoreCase())) || (this._name.Length == 0))
+                {
+                    goto TR_00C2;
+                }
+                else
+                {
+                    strArray2 = strArray;
+                    num = 0;
+                }
+            }
+            goto TR_00CE;
+        TR_0003:
+            num9++;
+        TR_000E:
+            while (true)
+            {
+                if (num9 >= strArray10.Length)
+                {
+                    list4 = list3;
+                    break;
+                }
+                string str17 = strArray10[num9];
+                if (str17.StartsWith("PSCommand_"))
+                {
+                    string str16 = str17.TrimStart("PSCommand_".ToCharArray());
+                    string[] strArray11 = this._name;
+                    int index = 0;
+                    while (true)
+                    {
+                        if (index < strArray11.Length)
+                        {
+                            string str18 = strArray11[index];
+                            if (!str16.Equals(str18))
+                            {
+                                index++;
+                                continue;
+                            }
+                            list3.Add(enumerable3);
+                            list4 = list3;
+                        }
+                        else
+                        {
+                            goto TR_0003;
+                        }
+                        break;
+                    }
+                    break;
+                }
+                goto TR_0003;
+            }
+            return list4;
+        TR_0051:
+            if ((foundPackages.Count == 0) && (Enumerable.Count<string>(this._name) == 0))
+            {
+                foundPackages.Add(result.SearchAsync(name, filter, 0, 100, NullLogger.Instance, CancellationToken.get_None()).GetAwaiter().GetResult());
+            }
+            List<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>> list2 = new List<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>>();
+            if (this._includeDependencies && Enumerable.Any<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>>((IEnumerable<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>>)foundPackages))
+            {
+                foreach (IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata> enumerable9 in this.FindDependencyPackages(repositoryUrl, foundPackages, resource))
+                {
+                    foundPackages.Add(enumerable9);
+                }
+            }
+            return foundPackages;
+        TR_0076:
+            if (((name != null) && (foundPackages.Count == 0)) && (name.Length != 0))
+            {
+                IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata> item = resource.GetMetadataAsync(name, this._prerelease, false, context, NullLogger.Instance, CancellationToken.get_None()).GetAwaiter().GetResult();
+                List<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>> list5 = new List<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>>();
+                if (this._version == null)
+                {
+                    if (Enumerable.Count<NuGet.Protocol.Core.Types.IPackageSearchMetadata>(Enumerable.Take<NuGet.Protocol.Core.Types.IPackageSearchMetadata>(item, 1)) > 0)
+                    {
+                        list5.Add(Enumerable.Take<NuGet.Protocol.Core.Types.IPackageSearchMetadata>(item, 1));
+                    }
+                }
+                else
+                {
+                    NuGetVersion minVersion = null;
+                    try
+                    {
+                        minVersion = new NuGetVersion(this._version);
+                    }
+                    catch
+                    {
+                    }
+                    VersionRange versionRange = (minVersion == null) ? VersionRange.Parse(this._version) : new VersionRange(minVersion, true, minVersion, true, null, null);
+                    if (this._version.Equals("*"))
+                    {
+                        if (repositoryUrl.Contains("api.nuget.org") || repositoryUrl.StartsWith("file:///"))
+                        {
+                            list5.Add(Enumerable.Reverse<NuGet.Protocol.Core.Types.IPackageSearchMetadata>(item));
+                        }
+                        else
+                        {
+                            list5.Add(item);
+                        }
+                    }
+                    else if (repositoryUrl.EndsWith("index.json") || repositoryUrl.StartsWith("file:///"))
+                    {
+                        list5.Add(Enumerable.Reverse<NuGet.Protocol.Core.Types.IPackageSearchMetadata>((IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>)(from pkg in item select pkg)));
+                    }
+                    else
+                    {
+                        list5.Add(from pkg in item select pkg);
+                    }
+                }
+                List<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>> list6 = new List<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>>();
+                if ((this._tags.Length == 0) || (list5 == null))
+                {
+                    foundPackages.AddRange((IEnumerable<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>>)list5);
+                }
+                else
+                {
+                    foreach (IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata> enumerable6 in list5)
+                    {
+                        char[] chArray5 = new char[] { ' ', ',' };
+                        char[] chArray2 = chArray5;
+                        string[] strArray19 = Enumerable.ElementAt<NuGet.Protocol.Core.Types.IPackageSearchMetadata>(enumerable6, 0).Tags.Split(chArray2, (StringSplitOptions)StringSplitOptions.RemoveEmptyEntries);
+                        foreach (string str25 in this._tags)
+                        {
+                            if (Enumerable.Contains<string>(strArray19, str25, (IEqualityComparer<string>)StringComparer.get_OrdinalIgnoreCase()))
+                            {
+                                list6.Add(enumerable6);
+                            }
+                        }
+                    }
+                    return list6;
+                }
+            }
+            if ((Enumerable.Count<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>>((IEnumerable<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>>)foundPackages) != 0) && ((Enumerable.Count<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>>((IEnumerable<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>>)foundPackages) <= 0) || Enumerable.Any<NuGet.Protocol.Core.Types.IPackageSearchMetadata>(Enumerable.ElementAt<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>>((IEnumerable<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>>)foundPackages, 0))))
+            {
+                goto TR_0051;
+            }
+            else
+            {
+                List<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>> list7 = new List<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>>();
+                string[] strArray21 = this._name;
+                int index = 0;
+                while (true)
+                {
+                    if (index < strArray21.Length)
+                    {
+                        string str26 = strArray21[index];
+                        if (str26.Contains("*"))
+                        {
+                            list7.Add(result.SearchAsync(str26, filter, 0, 0x1770, NullLogger.Instance, CancellationToken.get_None()).GetAwaiter().GetResult());
+                        }
+                        else
+                        {
+                            IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata> item = Enumerable.Take<NuGet.Protocol.Core.Types.IPackageSearchMetadata>(resource.GetMetadataAsync(str26, this._prerelease, false, context, NullLogger.Instance, CancellationToken.get_None()).GetAwaiter().GetResult(), 1);
+                            if (Enumerable.Count<NuGet.Protocol.Core.Types.IPackageSearchMetadata>(item) > 0)
+                            {
+                                list7.Add(item);
+                            }
+                        }
+                        index++;
+                        continue;
+                    }
+                    List<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>> list8 = new List<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>>();
+                    if (this._name.Length == 0)
+                    {
+                        list8.Add(result.SearchAsync("", filter, 0, 0x1770, NullLogger.Instance, CancellationToken.get_None()).GetAwaiter().GetResult());
+                    }
+                    List<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>> list9 = new List<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>>();
+                    if ((this._tags.Length == 0) || (foundPackages == null))
+                    {
+                        if (((this._type == null) || !Enumerable.Contains<string>(this._type, "Command", (IEqualityComparer<string>)StringComparer.get_OrdinalIgnoreCase())) || (this._name.Length == 0))
+                        {
+                            foundPackages.AddRange((IEnumerable<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>>)list8);
+                            goto TR_0051;
+                        }
+                        else
+                        {
+                            foreach (NuGet.Protocol.Core.Types.IPackageSearchMetadata pkg in Enumerable.ElementAt<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>>((IEnumerable<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>>)list8, 0))
+                            {
+                                char[] chArray7 = new char[] { ' ', ',' };
+                                char[] chArray4 = chArray7;
+                                string[] strArray24 = pkg.Tags.Split(chArray4, (StringSplitOptions)StringSplitOptions.RemoveEmptyEntries);
+                                foreach (string str29 in strArray24)
+                                {
+                                    if (str29.StartsWith("PSCommand_"))
+                                    {
+                                        string str28 = str29.TrimStart("PSCommand_".ToCharArray());
+                                        foreach (string str30 in this._name)
+                                        {
+                                            if (str28.Equals(str30))
+                                            {
+                                                Func<NuGet.Protocol.Core.Types.IPackageSearchMetadata, bool> <> 9__3;
+                                                Func<NuGet.Protocol.Core.Types.IPackageSearchMetadata, bool> func4 = <> 9__3;
+                                                if (<> 9__3 == null)
+                                                {
+                                                    Func<NuGet.Protocol.Core.Types.IPackageSearchMetadata, bool> local3 = <> 9__3;
+                                                    func4 = <> 9__3 = delegate (NuGet.Protocol.Core.Types.IPackageSearchMetadata p) {
+                                                        return object.ReferenceEquals(p.Identity, pkg.Identity);
+                                                    };
+                                                }
+                                                list9.Add(Enumerable.Where<NuGet.Protocol.Core.Types.IPackageSearchMetadata>(Enumerable.ElementAt<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>>((IEnumerable<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>>)list8, 0), func4));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            list4 = list9;
+                        }
+                    }
+                    else
+                    {
+                        foreach (NuGet.Protocol.Core.Types.IPackageSearchMetadata metadata1 in Enumerable.ElementAt<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>>((IEnumerable<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>>)list8, 0))
+                        {
+                            char[] chArray6 = new char[] { ' ', ',' };
+                            char[] chArray3 = chArray6;
+                            string[] strArray22 = metadata1.Tags.Split(chArray3, (StringSplitOptions)StringSplitOptions.RemoveEmptyEntries);
+                            foreach (string str27 in this._tags)
+                            {
+                                if (Enumerable.Contains<string>(strArray22, str27, (IEqualityComparer<string>)StringComparer.get_OrdinalIgnoreCase()))
+                                {
+                                    Func<NuGet.Protocol.Core.Types.IPackageSearchMetadata, bool> <> 9__2;
+                                    Func<NuGet.Protocol.Core.Types.IPackageSearchMetadata, bool> func3 = <> 9__2;
+                                    if (<> 9__2 == null)
+                                    {
+                                        Func<NuGet.Protocol.Core.Types.IPackageSearchMetadata, bool> local2 = <> 9__2;
+                                        func3 = <> 9__2 = delegate (NuGet.Protocol.Core.Types.IPackageSearchMetadata p) {
+                                            return object.ReferenceEquals(p.Identity, metadata1.Identity);
+                                        };
+                                    }
+                                    list9.Add(Enumerable.Where<NuGet.Protocol.Core.Types.IPackageSearchMetadata>(Enumerable.ElementAt<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>>((IEnumerable<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>>)list8, 0), func3));
+                                }
+                            }
+                        }
+                        list4 = list9;
+                    }
+                    break;
+                }
+            }
+            return list4;
+        TR_0077:
+            foundPackages.Add(enumerable3);
+            goto TR_0076;
+        TR_0087:
+            if ((this._type != null) && Enumerable.Contains<string>(this._type, "Module", (IEqualityComparer<string>)StringComparer.get_OrdinalIgnoreCase()))
+            {
+                if (!Enumerable.Contains<string>(strArray, "PSModule"))
+                {
+                    return list3;
+                }
+                else
+                {
+                    string[] strArray14 = this._name;
+                    int index = 0;
+                    if (index < strArray14.Length)
+                    {
+                        if (strArray14[index].Equals(Enumerable.ElementAt<NuGet.Protocol.Core.Types.IPackageSearchMetadata>(enumerable3, 0).Title))
+                        {
+                            list3.Add(enumerable3);
+                        }
+                        return list3;
+                    }
+                }
+            }
+            if (!((this._type != null) && Enumerable.Contains<string>(this._type, "Script", (IEqualityComparer<string>)StringComparer.get_OrdinalIgnoreCase())))
+            {
+                goto TR_0077;
+            }
+            else if (!Enumerable.Contains<string>(strArray, "PSScript"))
+            {
+                list4 = list3;
+            }
+            else
+            {
+                string[] strArray15 = this._name;
+                int index = 0;
+                if (index < strArray15.Length)
+                {
+                    if (strArray15[index].Equals(Enumerable.ElementAt<NuGet.Protocol.Core.Types.IPackageSearchMetadata>(enumerable3, 0).Title))
+                    {
+                        list3.Add(enumerable3);
+                    }
+                    list4 = list3;
+                }
+                else
+                {
+                    goto TR_0077;
+                }
+            }
+            return list4;
+        TR_0088:
+            num11++;
+        TR_0093:
+            while (true)
+            {
+                if (num11 < strArray12.Length)
+                {
+                    string str20 = strArray12[num11];
+                    if (str20.StartsWith("PSRoleCapability_"))
+                    {
+                        string str19 = str20.TrimStart("PSRoleCapability_".ToCharArray());
+                        string[] strArray13 = this._name;
+                        int index = 0;
+                        while (true)
+                        {
+                            if (index < strArray13.Length)
+                            {
+                                string str21 = strArray13[index];
+                                if (!str19.Equals(str21))
+                                {
+                                    index++;
+                                    continue;
+                                }
+                                list3.Add(enumerable3);
+                                list4 = list3;
+                            }
+                            else
+                            {
+                                goto TR_0088;
+                            }
+                            break;
+                        }
+                        break;
+                    }
+                }
+                else
+                {
+                    goto TR_0087;
+                }
+                goto TR_0088;
+            }
+            return list4;
+        TR_0096:
+            if (this._type != null)
+            {
+                if (!((this._type != null) && Enumerable.Contains<string>(this._type, "RoleCapability", (IEqualityComparer<string>)StringComparer.get_OrdinalIgnoreCase())))
+                {
+                    goto TR_0087;
+                }
+                else
+                {
+                    strArray12 = strArray;
+                    num11 = 0;
+                }
+            }
+            else
+            {
+                strArray10 = strArray;
+                num9 = 0;
+                goto TR_000E;
+            }
+            goto TR_0093;
+        TR_0097:
+            num7++;
+        TR_00A2:
+            while (true)
+            {
+                if (num7 < strArray8.Length)
+                {
+                    string str14 = strArray8[num7];
+                    if (str14.StartsWith("PSDscResource_"))
+                    {
+                        string str13 = str14.TrimStart("PSDscResource_".ToCharArray());
+                        string[] strArray9 = this._name;
+                        int index = 0;
+                        while (true)
+                        {
+                            if (index < strArray9.Length)
+                            {
+                                string str15 = strArray9[index];
+                                if (!str13.Equals(str15))
+                                {
+                                    index++;
+                                    continue;
+                                }
+                                list3.Add(enumerable3);
+                                list4 = list3;
+                            }
+                            else
+                            {
+                                goto TR_0097;
+                            }
+                            break;
+                        }
+                        break;
+                    }
+                }
+                else
+                {
+                    goto TR_0096;
+                }
+                goto TR_0097;
+            }
+            return list4;
+        TR_00A6:
+            if ((((this._type == null) || (this._name.Length == 0)) || ((!Enumerable.Contains<string>(this._type, "Command", (IEqualityComparer<string>)StringComparer.get_OrdinalIgnoreCase()) && !Enumerable.Contains<string>(this._type, "DscResource", (IEqualityComparer<string>)StringComparer.get_OrdinalIgnoreCase())) && !Enumerable.Contains<string>(this._type, "RoleCapability", (IEqualityComparer<string>)StringComparer.get_OrdinalIgnoreCase()))) || Enumerable.Any<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>>((IEnumerable<IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>>)list3))
+            {
+                Console.WriteLine("START");
+                Console.WriteLine(Enumerable.ElementAt<NuGet.Protocol.Core.Types.IPackageSearchMetadata>(enumerable3, 0).Title);
+                Console.WriteLine("-----");
+                Console.WriteLine(Enumerable.ElementAt<NuGet.Protocol.Core.Types.IPackageSearchMetadata>(enumerable3, 0).Tags.ToJson(0));
+                Console.WriteLine("END");
+                if (!((this._type != null) && Enumerable.Contains<string>(this._type, "DscResource", (IEqualityComparer<string>)StringComparer.get_OrdinalIgnoreCase())))
+                {
+                    goto TR_0096;
+                }
+                else
+                {
+                    strArray8 = strArray;
+                    num7 = 0;
+                }
+            }
+            else
+            {
+                return list3;
+            }
+            goto TR_00A2;
+        TR_00A7:
+            num5++;
+        TR_00B2:
+            while (true)
+            {
+                if (num5 < strArray6.Length)
+                {
+                    string str11 = strArray6[num5];
+                    if (str11.StartsWith("PSRoleCapability_"))
+                    {
+                        string str10 = str11.TrimStart("PSRoleCapability_".ToCharArray());
+                        string[] strArray7 = this._name;
+                        int index = 0;
+                        while (true)
+                        {
+                            if (index < strArray7.Length)
+                            {
+                                string str12 = strArray7[index];
+                                if (!str10.Equals(str12))
+                                {
+                                    index++;
+                                    continue;
+                                }
+                                list3.Add(enumerable3);
+                                list4 = list3;
+                            }
+                            else
+                            {
+                                goto TR_00A7;
+                            }
+                            break;
+                        }
+                        break;
+                    }
+                }
+                else
+                {
+                    goto TR_00A6;
+                }
+                goto TR_00A7;
+            }
+            return list4;
+        TR_00B4:
+            if (((this._type == null) || !Enumerable.Contains<string>(this._type, "RoleCapability", (IEqualityComparer<string>)StringComparer.get_OrdinalIgnoreCase())) || (this._name.Length == 0))
+            {
+                goto TR_00A6;
+            }
+            else
+            {
+                strArray6 = strArray;
+                num5 = 0;
+            }
+            goto TR_00B2;
+        TR_00B5:
+            num3++;
+        TR_00C0:
+            while (true)
+            {
+                if (num3 < strArray4.Length)
+                {
+                    string str8 = strArray4[num3];
+                    if (str8.StartsWith("PSDscResource_"))
+                    {
+                        string str7 = str8.Substring(str8.IndexOf('_') + 1);
+                        string[] strArray5 = this._name;
+                        int index = 0;
+                        while (true)
+                        {
+                            if (index < strArray5.Length)
+                            {
+                                string str9 = strArray5[index];
+                                if (!str7.Equals(str9))
+                                {
+                                    index++;
+                                    continue;
+                                }
+                                list3.Add(enumerable3);
+                                list4 = list3;
+                            }
+                            else
+                            {
+                                goto TR_00B5;
+                            }
+                            break;
+                        }
+                        break;
+                    }
+                }
+                else
+                {
+                    goto TR_00B4;
+                }
+                goto TR_00B5;
+            }
+            return list4;
+        TR_00C2:
+            if (((this._type == null) || !Enumerable.Contains<string>(this._type, "DscResource", (IEqualityComparer<string>)StringComparer.get_OrdinalIgnoreCase())) || (this._name.Length == 0))
+            {
+                goto TR_00B4;
+            }
+            else
+            {
+                strArray4 = strArray;
+                num3 = 0;
+            }
+            goto TR_00C0;
+        TR_00C3:
+            num++;
+        TR_00CE:
+            while (true)
+            {
+                if (num < strArray2.Length)
+                {
+                    string str5 = strArray2[num];
+                    if (str5.StartsWith("PSCommand_"))
+                    {
+                        string str4 = str5.TrimStart("PSCommand_".ToCharArray());
+                        string[] strArray3 = this._name;
+                        int index = 0;
+                        while (true)
+                        {
+                            if (index < strArray3.Length)
+                            {
+                                string str6 = strArray3[index];
+                                if (!str4.Equals(str6))
+                                {
+                                    index++;
+                                    continue;
+                                }
+                                list3.Add(enumerable3);
+                                list4 = list3;
+                            }
+                            else
+                            {
+                                goto TR_00C3;
+                            }
+                            break;
+                        }
+                        break;
+                    }
+                }
+                else
+                {
+                    goto TR_00C2;
+                }
+                goto TR_00C3;
+            }
+            return list4;
+        }
+
+
+
+
+
+
+
+
+
+
+
+        // Makes a call to search for local packages or online packages
+        private List<IEnumerable<IPackageSearchMetadata>> GetPackages(string repositoryUrl)
+        {
+            List<IEnumerable<IPackageSearchMetadata>> returnedPkgs = new List<IEnumerable<IPackageSearchMetadata>>();
+
+
+
+            // check if cache exists
+
+            if (repositoryUrl.StartsWith("file://"))
+            {
+
+                FindLocalPackagesResourceV2 localResource = new FindLocalPackagesResourceV2(repositoryUrl);
+
+                LocalPackageSearchResource resourceSearch = new LocalPackageSearchResource(localResource);
+                LocalPackageMetadataResource resourceMetadata = new LocalPackageMetadataResource(localResource);
+
+                SearchFilter filter = new SearchFilter(_prerelease);
+                SourceCacheContext context = new SourceCacheContext();
+
+
+                if ((_name == null) || (_name.Length == 0))
+                {
+                    returnedPkgs.AddRange(GetPackagesHelper(repositoryUrl, "", resourceSearch, resourceMetadata, filter, context));
+                }
+
+                foreach (var n in _name)
+                {
+                    returnedPkgs.AddRange(GetPackagesHelper(repositoryUrl, n, resourceSearch, resourceMetadata, filter, context));
+                }
+            }
+            else
+            {
+
+
+                IEnumerable<Lazy<INuGetResourceProvider>> provider = FactoryExtensionsV3.GetCoreV3(NuGet.Protocol.Core.Types.Repository.Provider);
+
+                PackageSource source = new PackageSource(repositoryUrl);
+
+                if (_credential != null)
+                {
+                    string password = new NetworkCredential(string.Empty, _credential.Password).Password;
+                    source.Credentials = PackageSourceCredential.FromUserInput(repositoryUrl, _credential.UserName, password, true, null);
+                }
+
+                SourceRepository repository = new SourceRepository(source, enumerable);
+                PackageSearchResource result = repository.GetResourceAsync<PackageSearchResource>().GetAwaiter().GetResult();
+                PackageMetadataResource resource = repository.GetResourceAsync<PackageMetadataResource>().GetAwaiter().GetResult();
+                SearchFilter filter = new SearchFilter(_prerelease);
+                SourceCacheContext context = new SourceCacheContext();
+
+
+                PackageSearchResource resource3 = new SourceRepository(new PackageSource(repositoryUrl), FactoryExtensionsV3.GetCoreV3(NuGet.Protocol.Core.Types.Repository.Provider)).GetResourceAsync<NuGet.Protocol.Core.Types.PackageSearchResource>().GetAwaiter().GetResult();
+
+
+
+
+                if ((_name == null) || (_name.Length == 0))
+                {
+                    returnedPkgs.AddRange(GetPackagesHelper(repositoryUrl, ""));
+                }
+
+                foreach (var n in _name)
+                {
+                    returnedPkgs.AddRange(GetPackagesHelper(repositoryUrl, n));
+                }
+            }
+
+            return returnedPkgs;
+        }
 
 
 
