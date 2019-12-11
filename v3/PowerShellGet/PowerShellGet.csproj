@@ -18,4 +18,13 @@
     <PackageReference Include="NuGet.Repositories" Version="4.2.0" />
   </ItemGroup>
 
+
+  <Target Name="CoreTypes" BeforeTargets="FindReferenceAssembliesForReferences;ResolveReferences">
+    <ItemGroup>
+      <ReferencePath Condition="'%(FileName)' == 'NuGet.Protocol.Core.Types'">
+        <Aliases>CoreTypes</Aliases>
+      </ReferencePath>
+    </ItemGroup>
+  </Target>
+
 </Project>
