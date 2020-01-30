@@ -175,6 +175,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
         /// <summary>
         /// Specifies to return any dependency packages.
+        /// Currently only used when name param is specified.
         /// </summary>
         public SwitchParameter IncludeDependencies
         {
@@ -191,7 +192,9 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
         public static readonly List<string> RepoCacheFileName = new List<string>();
         // Temporarily store cache in this path for testing purposes
         public static readonly string RepositoryCacheDir = "c:/code/temp/repositorycache"; //@"%APPDTA%\NuGet";
-                                                                                           // Define the cancellation token.
+        private readonly object p;
+
+        // Define the cancellation token.
         CancellationTokenSource source;
         CancellationToken cancellationToken;
 
@@ -327,8 +330,10 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
 
                 // final results -- All the appropriate pkgs with these tags
-                var tags = joinedTagsTable.AsEnumerable().Where(tagsPredicate).Select(p => p);
- 
+                var tagsRowCollection = joinedTagsTable.AsEnumerable().Where(tagsPredicate).Select(p => p);
+
+                // Add row collection to final table to be queried
+                queryTable.Merge(tagsRowCollection.ToDataTable());
             }
        
             if (_type != null)
@@ -373,7 +378,10 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                     }
 
                     // final results -- All the appropriate pkgs with these tags
-                    var commands = joinedCommandTable.AsEnumerable().Where(commandPredicate).Select(p => p);                   
+                    var commandsRowCollection = joinedCommandTable.AsEnumerable().Where(commandPredicate).Select(p => p);
+
+                    // Add row collection to final table to be queried
+                    queryTable.Merge(commandsRowCollection.ToDataTable());
                 }
 
 
@@ -418,7 +426,10 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                     }
 
                     // final results -- All the appropriate pkgs with these tags
-                    var dscResources = joinedDscResourceTable.AsEnumerable().Where(dscResourcePredicate).Select(p => p);
+                    var dscResourcesRowCollection = joinedDscResourceTable.AsEnumerable().Where(dscResourcePredicate).Select(p => p);
+
+                    // Add row collection to final table to be queried
+                    queryTable.Merge(dscResourcesRowCollection.ToDataTable());
                 }
 
                 if (_type.Contains("RoleCapability", StringComparer.OrdinalIgnoreCase))
@@ -462,39 +473,42 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                     }
 
                     // final results -- All the appropriate pkgs with these tags
-                    var roleCapabilities = joinedRoleCapabilityTable.AsEnumerable().Where(roleCapabilityPredicate).Select(p => p);
+                    var roleCapabilitiesRowCollection = joinedRoleCapabilityTable.AsEnumerable().Where(roleCapabilityPredicate).Select(p => p);
+
+                    // Add row collection to final table to be queried
+                    queryTable.Merge(roleCapabilitiesRowCollection.ToDataTable());
                 }
             }
 
 
 
-            predicate = BuildPredicate(repositoryName);
+            // We'll build the rest of the predicate-- ie the portions of the predicate that do not rely on datatables 
+            predicate = predicate.Or(BuildPredicate(repositoryName));
 
 
-            /// do we need this???
-            if ((queryTable == null) || (queryTable.Rows.Count == 0) && (((_type == null) || (_type.Contains("Module", StringComparer.OrdinalIgnoreCase) || _type.Contains("Script", StringComparer.OrdinalIgnoreCase))) && ((_tags == null) || (_tags.Length == 0))))
+            // we want to uniquely add datarows into the table 
+            // if queryTable is empty, we'll just query upon the metadata table
+            if (queryTable == null || queryTable.Rows.Count == 0)
             {
                 queryTable = metadataTable;
             }
 
+            // final results -- All the appropriate pkgs with these tags
+            var queryTableRowCollection = queryTable.AsEnumerable().Where(predicate).Select(p => p);
 
-            var distinctPkgs = queryTable.AsEnumerable().DistinctBy
+            // ensure distinct by key
+            var distinctQueryTableRowCollection = queryTableRowCollection.AsEnumerable().DistinctBy(pkg => pkg.Field<string>("Key"));
 
-            /*
-            enumerable5 = DistinctByExtension.DistinctBy<DataRow, string>((IEnumerable<DataRow>) EnumerableRowCollectionExtensions.Where<DataRow>(DataTableExtensions.AsEnumerable(table7), (Func<DataRow, bool>) starter), delegate (DataRow p) {
-                return DataRowExtensions.Field<string>(p, "Key");
-            });
-            */
-
-
-
-            List<DataRow> list = Enumerable.ToList<DataRow>(enumerable5);
-
-            IEnumerable<DataRow> foundPkgs = 
+            // Add row collection to final table to be queried
+            queryTable.Merge(distinctQueryTableRowCollection.ToDataTable());
 
 
 
-
+            /// ignore-- testing.
+            //if ((queryTable == null) || (queryTable.Rows.Count == 0) && (((_type == null) || (_type.Contains("Module", StringComparer.OrdinalIgnoreCase) || _type.Contains("Script", StringComparer.OrdinalIgnoreCase))) && ((_tags == null) || (_tags.Length == 0))))
+            //{
+            //    queryTable = metadataTable;
+            //}
 
 
 
@@ -531,11 +545,9 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
                     DataTable joinedDependencyTable = dependencyResults.ToDataTable();
 
-
-
-
+                
                     // final results -- All the appropriate pkgs with these tags
-                    var roleCapabilities = joinedDependencyTable.AsEnumerable().Where(roleCapabilityPredicate).Select(p => p);
+                    var dependencies = joinedDependencyTable.AsEnumerable().Where(dependencyPredicate).Select(p => p);
                   
 
                     /// NEED TO COMBINE FINAL RESULTS TABLES?
@@ -545,9 +557,12 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                     NuGetVersion maxVersion = string.IsNullOrEmpty(tables.Dependencies.MaximumVersion) ? null : new NuGetVersion(tables.Dependencies.MaximumVersion);
                     VersionRange range = new VersionRange(minVersion, true, maxVersion, true, null, null);
 
-                    // need to optimize this
+                    // need to optimize this 
+                    // don't call this function recursively, but 
                     list.AddRange(FindPackageFromCacheHelper(cachetables, repositoryName, name, range.ToString()));
             }
+
+
 
 
             // (IEnumerable<DataRow>) 
@@ -559,9 +574,9 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
 
 
-        private ExpressionStarter<DataRow> BuildPredicate(string repository, string version)
+        private ExpressionStarter<DataRow> BuildPredicate(string repository)
         {
-            NuGetVersion nugetVersion;
+            //NuGetVersion nugetVersion0;
             var predicate = PredicateBuilder.New<DataRow>(true);
 
             if (_type != null)
@@ -598,18 +613,17 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
             }
 
             
-
-            if (version != null)
+            // cache will only contain the latest stable and latest prerelease of each package
+            if (_version != null)
             {
 
-                NuGetVersion nugetVersion = null;
-                NuGetVersion.TryParse(version, out nugetVersion);
+                NuGetVersion nugetVersion;
 
-                VersionRange versionRange = VersionRange.Parse(version);
+                //VersionRange versionRange = VersionRange.Parse(version);
 
-                predicate = predicate.And(pkg => versionRange.Satisfies(pkg.Field<string>("Version")));
+                if (NuGetVersion.TryParse(_version, out nugetVersion))
                 {
-                   
+                    predicate = predicate.And(pkg => pkg.Field<string>("Version").Equals(nugetVersion));
                 }
 
 
@@ -618,52 +632,12 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
             }
             if (!_prerelease)
             {
-                predicate = predicate.And(pkg => pkg.Field<string>("IsPrerelease").Equals(false));  // consider checking if it IS prerelease
+                predicate = predicate.And(pkg => pkg.Field<string>("IsPrerelease").Equals("false"));  // consider checking if it IS prerelease
             }
             return predicate;
         }
 
 
-
-
-
-
-
-        /*
-                    IEnumerable<IPackageSearchMetadata> enumerable;
-
-                    List<IEnumerable<IPackageSearchMetadata>> list3;
-                    List<IEnumerable<IPackageSearchMetadata>> list4;
-
-                    List<IEnumerable<IPackageSearchMetadata>> foundPackages = new List<IEnumerable<IPackageSearchMetadata>>();
-
-                    FindLocalPackagesResourceV2 localResource = new FindLocalPackagesResourceV2(repositoryUrl);
-
-                    LocalPackageSearchResource resource = new LocalPackageSearchResource(localResource);
-                    LocalPackageMetadataResource resource2 = new LocalPackageMetadataResource(localResource);
-
-                    SearchFilter filter = new SearchFilter(_prerelease);
-                    SourceCacheContext context = new SourceCacheContext();
-
-                    if (_moduleName == null)
-                    {
-
-                    }
-                    else
-                    {
-                        // Take(1)
-                        var metadatapkgs = resource2.GetMetadataAsync(_moduleName, _prerelease, false, context, NullLogger.Instance, CancellationToken.None).GetAwaiter().GetResult().FirstOrDefault();
-
-
-                        var list3 = new List<IEnumerable<IPackageSearchMetadata>>();
-
-
-                        char[] delimiters = new char[] { ' ', ',' };
-                        char[] tagsArr;
-
-
-                }
-        */
 
 
 
@@ -705,57 +679,53 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
             List<IEnumerable<IPackageSearchMetadata>> filteredFoundPkgs = new List<IEnumerable<IPackageSearchMetadata>>();
 
-
-
-
-
             // Check version first to narrow down the number of pkgs before potential searching through tags
             if (_version != null)
             {
-                /*
-                NuGetVersion minVersion = null;
-                try
+                
+                if (_version.Equals("*"))
                 {
-                    minVersion = new NuGetVersion(this._version);
+                    // this is all that's needed if version == "*" (I think)
+                    /*
+                     if (repositoryUrl.Contains("api.nuget.org") || repositoryUrl.StartsWith("file:///"))
+                     {
+                         // need to reverse the order of the informaiton returned when using nuget.org v3 protocol 
+                         filteredFoundPkgs.Add(pkgMetadataResource.GetMetadataAsync(name, _prerelease, false, srcContext, NullLogger.Instance, cancellationToken).GetAwaiter().GetResult().Reverse());
+                     }
+                     else
+                     {
+                         filteredFoundPkgs.Add(pkgMetadataResource.GetMetadataAsync(name, _prerelease, false, srcContext, NullLogger.Instance, cancellationToken).GetAwaiter().GetResult());
+                     }
+                     */
+                     // ensure that the latst version is returned first (the ordering of versions differ 
+                    filteredFoundPkgs.Add(pkgMetadataResource.GetMetadataAsync(name, _prerelease, false, srcContext, NullLogger.Instance, cancellationToken).GetAwaiter().GetResult().OrderByDescending(p => p.Identity.Version, VersionComparer.VersionRelease));
                 }
-                catch
+                else 
                 {
-                }
-                VersionRange versionRange = (minVersion == null) ? VersionRange.Parse(this._version) : new VersionRange(minVersion, true, minVersion, true, null, null);
-                if (this._version.Equals("*"))
-                {
-                    if (repositoryUrl.Contains("api.nuget.org") || repositoryUrl.StartsWith("file:///"))
-                    {
-                        list5.Add(Enumerable.Reverse<NuGet.Protocol.Core.Types.IPackageSearchMetadata>(item));
-                    }
-                    else
-                    {
-                        list5.Add(item);
-                    }
-                }
-                else if (repositoryUrl.EndsWith("index.json") || repositoryUrl.StartsWith("file:///"))
-                {
-                    list5.Add(Enumerable.Reverse<NuGet.Protocol.Core.Types.IPackageSearchMetadata>((IEnumerable<NuGet.Protocol.Core.Types.IPackageSearchMetadata>)(from pkg in item select pkg)));
-                }
-                else
-                {
-                    list5.Add(from pkg in item select pkg);
-                }
-                */
+                    // try to parse into a singular NuGet version
+                    //NuGetVersion specificVersion = new NuGetVersion(_version);
+
+                    // maybe try catch this
+                    VersionRange versionRange = VersionRange.Parse(_version);
 
 
+                    //VersionRange versionRange = (specificVersion == null) ? VersionRange.Parse(_version) : new VersionRange(specificVersion, true, specificVersion, true, null, null);
+
+                    //IEnumerable<IPackageSearchMetadata> tempFoundPkgsVersionRange = pkgMetadataResource.GetMetadataAsync(name, _prerelease, false, srcContext, NullLogger.Instance, cancellationToken).GetAwaiter().GetResult();
+                    //var versionsWithinRange = tempFoundPkgsVersionRange.Where(p => versionRange.Satisfies(p.Identity.Version));
+
+                    // Search for packages within a version range
+                    // ensure that the latst version is returned first (the ordering of versions differ 
+                    filteredFoundPkgs.Add(pkgMetadataResource.GetMetadataAsync(name, _prerelease, false, srcContext, NullLogger.Instance, cancellationToken).GetAwaiter().GetResult()
+                        .Where(p => versionRange.Satisfies(p.Identity.Version))
+                        .OrderByDescending(p => p.Identity.Version, VersionComparer.VersionRelease));
+
+                }
             }
-            // search for a specific version, specific name .....
-            /*
-            if (this._version == null)
-            {
-               // add the latest version (different ordering for some v3 protocol implementations
-            }
-            */
+            
 
 
-
-            /// TAGS
+            // TAGS
             /// should move this to the last thing that gets filtered
             char[] delimiter = new char[] { ' ', ',' };
             var flattenedPkgs = foundPackages.Flatten();
@@ -784,7 +754,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
             if (_type != null)
             {
                 // can optimize this more later
-
+                // this is handled
                 /*
                 if (_type.Contains("Command", StringComparer.OrdinalIgnoreCase))
                 {
@@ -837,9 +807,11 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                 List<IEnumerable<IPackageSearchMetadata>> foundDependencies = new List<IEnumerable<IPackageSearchMetadata>>();
 
                 // need to parse the depenency and version and such
-                foreach (var pkg in filteredFoundPkgs)
+                var filteredFoundPkgsFlattened = (IEnumerable<IPackageSearchMetadata>) filteredFoundPkgs.Flatten();
+                foreach (var pkg in filteredFoundPkgsFlattened)
                 {
                     // need to improve this later
+                    // this function recursively finds all dependencies
                     foundDependencies.AddRange(FindDependenciesFromSource(pkg, pkgMetadataResource, srcContext));
                 }
             }
@@ -850,7 +822,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
         
 
-        private List<IEnumerable<IPackageSearchMetadata>> FindDependenciesFromSource(IEnumerable<IPackageSearchMetadata> pkg, PackageMetadataResource pkgMetadataResource, SourceCacheContext srcContext)
+        private List<IEnumerable<IPackageSearchMetadata>> FindDependenciesFromSource(IPackageSearchMetadata pkg, PackageMetadataResource pkgMetadataResource, SourceCacheContext srcContext)
         {
             /// dependency resolver
             /// 
@@ -858,31 +830,53 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
             /// 
             /// call the findpackages from source helper (potentially generalize this so it's finding packages from source or cache)
             /// 
-            List<IEnumerable<IPackageSearchMetadata>> foundDependencies = new List<IEnumerable<IPackageSearchMetadata>>();
-
+            List<IEnumerable<IPackageSearchMetadata>>foundDependencies = new List<IEnumerable<IPackageSearchMetadata>>();
 
             // 1)  check the dependencies of this pkg 
-
-
-
-            // 2) for each dependency, search for the appropriate name and version
-            foreach (var dep in p)
+            // 2) for each dependency group, search for the appropriate name and version
+            // a dependency group are all the dependencies for a particular framework
+            foreach (var dependencyGroup in pkg.DependencySets)
             {
-                // 2.1) check that the appropriate pkg name exists
 
-                var dependencies = pkgMetadataResource.GetMetadataAsync(pkg.ElementAt(0).Title, _prerelease, false, srcContext, NullLogger.Instance, cancellationToken).GetAwaiter().GetResult();
+                //dependencyGroup.TargetFramework
+                //dependencyGroup.
+            
+                foreach (var pkgDependency in dependencyGroup.Packages)
+                {
 
-                // 2.2) check if the appropriate verion range exists  (if version exists, then add it to the list to return)       
+                    // 2.1) check that the appropriate pkg dependencies exist
+                    // returns all versions from a single package id.
+                    var dependencies = pkgMetadataResource.GetMetadataAsync(pkgDependency.Id, _prerelease, true, srcContext, NullLogger.Instance, cancellationToken).GetAwaiter().GetResult();
+                   
+                    // then 2.2) check if the appropriate verion range exists  (if version exists, then add it to the list to return)       
+
+                    VersionRange versionRange = null;
+                    try
+                    {
+                        versionRange = VersionRange.Parse(pkgDependency.VersionRange.OriginalString);
+                    }
+                    catch
+                    {
+                        Console.WriteLine("Error parsing version range");
+                    }
 
 
-                foundDependencies.Add(dependencyPkg);
 
+                    // if no version/version range is specified the we just return the latest version
+                    
+                    IEnumerable<IPackageSearchMetadata> depPkgToReturn = (versionRange == null ?
+                        (IEnumerable<IPackageSearchMetadata>) dependencies.FirstOrDefault() :
+                        (IEnumerable<IPackageSearchMetadata>) dependencies.Where(v => versionRange.Satisfies(v.Identity.Version)).FirstOrDefault());
+                    
 
-                // 3) search for any dependencies 
-                foundDependencies.Add(FindDependencies(dependencyPkg, pkgMetadataResource, srcContext));
+                    foundDependencies.Add(depPkgToReturn);
 
+                    // 3) search for any dependencies the pkg has 
+                    foundDependencies.AddRange(FindDependenciesFromSource(depPkgToReturn.FirstOrDefault(), pkgMetadataResource, srcContext));
+                }
             }
 
+            // flatten after returning
             return foundDependencies;
         }
 
