@@ -4,37 +4,16 @@ using System.Collections;
 using System.Management.Automation;
 using System.Collections.Generic;
 using NuGet.Configuration;
-
 using NuGet.Common;
 using NuGet.Protocol;
 using NuGet.Protocol.Core.Types;
-using System.Threading.Tasks;
 using System.Threading;
-using LinqKit;
-using Microsoft.PowerShell.PowerShellGet;
-using Microsoft.PowerShell.PowerShellGet.RepositorySettings;
-using MoreLinq.Extensions;
-using NuGet.Common;
-using NuGet.Configuration;
-using NuGet.Packaging;
 using NuGet.Packaging.Core;
-using NuGet.Protocol;
-using NuGet.Protocol.Core.Types;
 using NuGet.Versioning;
-using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Data;
-using System.Linq;
-using System.Linq.Expressions;
-using System.Management.Automation;
 using System.Net;
-using System.Reflection;
-using System.Runtime.CompilerServices;
-using System.Threading;
-using System.IO;
-using NuGet.Packaging.Signing;
-using NuGet.Protocol.Core.Types;
+using System.Linq;
+using MoreLinq.Extensions;
+using static NuGet.Protocol.Core.Types.PackageSearchMetadataBuilder;
 
 //using NuGet.Protocol.Core.Types;
 
@@ -367,28 +346,233 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
             SearchFilter filter = new SearchFilter(_prerelease);
             //SourceCacheContext context = new SourceCacheContext();
-        
 
 
-            var pkgIdentity = new PackageIdentity("Carbon", NuGetVersion.Parse("2.9.2"));
 
 
-            var resource = new DownloadResourceV2FeedProvider();
-            var resource2 = resource.TryCreate(repository, cancellationToken);
+            // I think we'll likely need to make a call to find first so that we can ensure we have the right version (if no version is specified) 
+            // Call Find 
 
-            // Act
-            var cacheContext = new SourceCacheContext();
+            // things we know:  at least one name,  we don't know versions though 
+
+            // returnedPkgs
+
+            // IDEA:  use find to find all dependencies... 
 
 
-            var downloadResource = repository.GetResourceAsync<DownloadResource>().GetAwaiter().GetResult();
+
+            //////////////////////  packages from source
+            ///
+            var repositoryUrl = "https://www.powershellgallery.com/api/v2";
+            PackageSource source2 = new PackageSource(repositoryUrl);
+            if (_credential != null)
+            {
+                string password = new NetworkCredential(string.Empty, _credential.Password).Password;
+                source2.Credentials = PackageSourceCredential.FromUserInput(repositoryUrl, _credential.UserName, password, true, null);
+            }
+            var provider2 = FactoryExtensionsV3.GetCoreV3(NuGet.Protocol.Core.Types.Repository.Provider);
+
+            SourceRepository repository2 = new SourceRepository(source2, provider2);
+            PackageMetadataResource resourceMetadata2 = repository.GetResourceAsync<PackageMetadataResource>().GetAwaiter().GetResult();
+
+            SearchFilter filter2 = new SearchFilter(_prerelease);
+            SourceCacheContext context2 = new SourceCacheContext();
 
 
-            var result = downloadResource.GetDownloadResourceResultAsync(
-                pkgIdentity,
-                new PackageDownloadContext(cacheContext),
-                "C:/code/temp/installtestpath",
-                logger: NullLogger.Instance,
-                CancellationToken.None).GetAwaiter().GetResult();
+
+            foreach (var n in _name)
+            {
+                // returnedPkgs.AddRange(FindPackagesFromSourceHelper(repositoryUrl, n, resourceSearch, resourceMetadata, filter, context));
+
+                //functionality here
+                //////////////////    packages from source helper
+
+                IPackageSearchMetadata filteredFoundPkgs = null;
+
+
+                // Check version first to narrow down the number of pkgs before potential searching through tags
+
+
+                if (_version == null || _version.Equals("*"))
+                {
+                    // ensure that the latst version is returned first (the ordering of versions differ 
+                    filteredFoundPkgs = (resourceMetadata2.GetMetadataAsync(n, _prerelease, false, context2, NullLogger.Instance, cancellationToken).GetAwaiter().GetResult()
+                        .OrderByDescending(p => p.Identity.Version, VersionComparer.VersionRelease)
+                        .FirstOrDefault());
+                }
+                else
+                {
+                    VersionRange versionRange = VersionRange.Parse(_version);
+
+                    // Search for packages within a version range
+                    // ensure that the latst version is returned first (the ordering of versions differ 
+                    filteredFoundPkgs = (resourceMetadata2.GetMetadataAsync(n, _prerelease, false, context2, NullLogger.Instance, cancellationToken).GetAwaiter().GetResult()
+                        .Where(p => versionRange.Satisfies(p.Identity.Version))
+                        .OrderByDescending(p => p.Identity.Version, VersionComparer.VersionRelease)
+                        .FirstOrDefault());
+
+                }
+
+                // implementing type later
+                /*
+                if (_type != null)
+                {
+                    filteredFoundPkgs.AddRange(FilterPkgsByResourceType(foundP ackages, filteredFoundPkgs));
+                }
+                */
+                // else type == null
+                // if type is null, we just don't filter on anything for type
+
+
+
+                List<IPackageSearchMetadata> foundDependencies = new List<IPackageSearchMetadata>();
+
+
+
+                // found a package to install and looking for dependencies
+                // Search for dependencies
+                if (filteredFoundPkgs != null)
+                {
+
+
+                    // need to parse the depenency and version and such
+                    
+                        // need to improve this later
+                        // this function recursively finds all dependencies
+                        // might need to do add instead of AddRange
+                    foundDependencies.AddRange(FindDependenciesFromSource(filteredFoundPkgs, resourceMetadata2, context2));
+                    
+
+                }  /// end dep conditional
+
+
+
+                // check which pkgs you actually need to install
+
+
+
+
+                List<IPackageSearchMetadata> pkgsToInstall = new List<IPackageSearchMetadata>();
+
+                // install pkg, then install any dependencies to a temp directory 
+
+
+                pkgsToInstall.Add(filteredFoundPkgs);
+                pkgsToInstall.AddRange(foundDependencies);
+
+
+
+                // install everything
+                foreach (var p in pkgsToInstall)
+                {
+                    var pkgIdentity = new PackageIdentity(p.Identity.Id, p.Identity.Version);
+
+
+                    var resource = new DownloadResourceV2FeedProvider();
+                    var resource2 = resource.TryCreate(repository, cancellationToken);
+
+                    // Act
+                    var cacheContext = new SourceCacheContext();
+
+
+                    var downloadResource = repository.GetResourceAsync<DownloadResource>().GetAwaiter().GetResult();
+
+
+                    var result = downloadResource.GetDownloadResourceResultAsync(
+                        pkgIdentity,
+                        new PackageDownloadContext(cacheContext),
+                        "C:/code/temp/installtestpath",
+                        logger: NullLogger.Instance,
+                        CancellationToken.None).GetAwaiter().GetResult();
+                }
+
+
+
+
+            }
+            ////////////////////////////////////////
+
+
+
+
+
+           
+
+
+
+
         }
+
+
+
+        private List<IPackageSearchMetadata> FindDependenciesFromSource(IPackageSearchMetadata pkg, PackageMetadataResource pkgMetadataResource, SourceCacheContext srcContext)
+        {
+            /// dependency resolver
+            /// 
+            /// this function will be recursively called
+            /// 
+            /// call the findpackages from source helper (potentially generalize this so it's finding packages from source or cache)
+            /// 
+            List<IPackageSearchMetadata> foundDependencies = new List<IPackageSearchMetadata>();
+
+            // 1)  check the dependencies of this pkg 
+            // 2) for each dependency group, search for the appropriate name and version
+            // a dependency group are all the dependencies for a particular framework
+            foreach (var dependencyGroup in pkg.DependencySets)
+            {
+
+                //dependencyGroup.TargetFramework
+                //dependencyGroup.
+
+                foreach (var pkgDependency in dependencyGroup.Packages)
+                {
+
+                    // 2.1) check that the appropriate pkg dependencies exist
+                    // returns all versions from a single package id.
+                    var dependencies = pkgMetadataResource.GetMetadataAsync(pkgDependency.Id, _prerelease, true, srcContext, NullLogger.Instance, cancellationToken).GetAwaiter().GetResult();
+
+                    // then 2.2) check if the appropriate verion range exists  (if version exists, then add it to the list to return)       
+
+                    VersionRange versionRange = null;
+                    try
+                    {
+                        versionRange = VersionRange.Parse(pkgDependency.VersionRange.OriginalString);
+                    }
+                    catch
+                    {
+                        Console.WriteLine("Error parsing version range");
+                    }
+
+
+
+                    // if no version/version range is specified the we just return the latest version
+
+                    IPackageSearchMetadata depPkgToReturn = (versionRange == null ?
+                        dependencies.FirstOrDefault() :
+                        dependencies.Where(v => versionRange.Satisfies(v.Identity.Version)).FirstOrDefault());
+
+
+                    foundDependencies.Add(depPkgToReturn);
+
+                    // 3) search for any dependencies the pkg has 
+                    foundDependencies.AddRange(FindDependenciesFromSource(depPkgToReturn, pkgMetadataResource, srcContext));
+                }
+            }
+
+            // flatten after returning
+            return foundDependencies;
+        }
+
+
+
+
+
+
+
+
+
+
+
+
     }
 }
