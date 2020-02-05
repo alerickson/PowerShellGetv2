@@ -1,22 +1,8 @@
 ﻿
 using System;
-using System.Collections;
 using System.Management.Automation;
-using System.Collections.Generic;
-using NuGet.Configuration;
-using NuGet.Common;
-using NuGet.Protocol;
-using NuGet.Protocol.Core.Types;
 using System.Threading;
-using NuGet.Packaging.Core;
 using NuGet.Versioning;
-using System.Net;
-using System.Linq;
-using MoreLinq.Extensions;
-
-
-using System;
-using System.Collections.Generic;
 using System.IO;
 
 
@@ -68,20 +54,6 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
         private PSCustomObject[] _inputObject; // = new string[0];
 
 
-        /// <summary>
-        /// The destination where the resource is to be installed. Works for all resource types.
-        /// </summary>
-        [Parameter(ValueFromPipeline = true, ValueFromPipelineByPropertyName = true, ParameterSetName = "NameParameterSet")]
-        [ValidateNotNullOrEmpty]
-        public string[] DestinationPath
-        {
-            get
-            { return _type; }
-
-            set
-            { _type = value; }
-        }
-        private string[] _type;
 
         /// <summary>
         /// Specifies the version or version range of the package to be installed
@@ -113,118 +85,6 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
         private SwitchParameter _prerelease;
 
         /// <summary>
-        /// Specifies a user account that has rights to find a resource from a specific repository.
-        /// </summary>
-        [Parameter(ParameterSetName = "NameParameterSet")]
-        [ValidateNotNullOrEmpty]
-        public string[] Repository
-        {
-            get
-            { return _repository; }
-
-            set
-            { _repository = value; }
-        }
-        private string[] _repository;
-
-        /// <summary>
-        /// Specifies the type of the resource to be searched for. 
-        /// </summary>
-        [Parameter(ValueFromPipeline = true, ParameterSetName = "NameParameterSet")]
-        [ValidateNotNull]
-        public string[] Tags
-        {
-            get
-            { return _tags; }
-
-            set
-            { _tags = value; }
-        }
-        private string[] _tags;
-
-        /// <summary>
-        /// Specify which repositories to search in.
-        /// </summary>
-        [ValidateNotNullOrEmpty]
-        [Parameter(ValueFromPipeline = true, ParameterSetName = "NameParameterSet")]
-        public string[] Repositories
-        {
-            get { return _repositories; }
-
-            set { _repositories = value; }
-        }
-        private string[] _repositories;
-
-        /// <summary>
-        /// Specifies a user account that has rights to find a resource from a specific repository.
-        /// </summary>
-        [Parameter(ValueFromPipelineByPropertyName = true, ParameterSetName = "NameParameterSet")]
-        public PSCredential Credential
-        {
-            get
-            { return _credential; }
-
-            set
-            { _credential = value; }
-        }
-        private PSCredential _credential;
-
-        /// <summary>
-        /// Specifies to return any dependency packages.
-        /// Currently only used when name param is specified.
-        /// </summary>
-        [Parameter()]
-        [ValidateSet("CurrentUser", "AllUsers")]
-        public string Scope
-        {
-            get { return _scope; }
-
-            set { _scope = value; }
-        }
-        private string _scope;
-
-
-        /// <summary>
-        /// Overrides warning messages about installation conflicts about existing commands on a computer.
-        /// Overwrites existing commands that have the same name as commands being installed by a module. AllowClobber and Force can be used together in an Install-Module command.
-        /// Prevents installing modules that have the same cmdlets as a differently named module already
-        /// </summary>
-        [Parameter()]
-        public SwitchParameter NoClobber
-        {
-            get { return _noClobber; }
-
-            set { _noClobber = value; }
-        }
-        private SwitchParameter _noClobber;
-
-
-        /// <summary>
-        /// Suppresses being prompted if the publisher of the resource is different from the currently installed version.
-        /// </summary>
-        [Parameter()]
-        public SwitchParameter IgnoreDifferentPublisher
-        {
-            get { return _ignoreDifferentPublisher; }
-
-            set { _ignoreDifferentPublisher = value; }
-        }
-        private SwitchParameter _ignoreDifferentPublisher;
-
-
-        /// <summary>
-        /// Suppresses being prompted for untrusted sources.
-        /// </summary>
-        [Parameter()]
-        public SwitchParameter TrustRepository
-        {
-            get { return _trustRepository; }
-
-            set { _trustRepository = value; }
-        }
-        private SwitchParameter _trustRepository;
-
-        /// <summary>
         /// Overrides warning messages about resource installation conflicts.
         /// If a resource with the same name already exists on the computer, Force allows for multiple versions to be installed.
         /// If there is an existing resource with the same name and version, Force does NOT overwrite that version.
@@ -239,67 +99,10 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
         private SwitchParameter _force;
 
 
-        /// <summary>
-        /// Overwrites a previously installed resource with the same name and version.
-        /// </summary>
-        [Parameter()]
-        public SwitchParameter Reinstall
-        {
-            get { return _reinstall; }
 
-            set { _reinstall = value; }
-        }
-        private SwitchParameter _reinstall;
+        private CancellationTokenSource source;
+        private CancellationToken cancellationToken;
 
-
-        /// <summary>
-        /// Suppresses progress information.
-        /// </summary>
-        [Parameter()]
-        public SwitchParameter Quiet
-        {
-            get { return _quiet; }
-
-            set { _quiet = value; }
-        }
-        private SwitchParameter _quiet;
-
-
-        /// <summary>
-        /// For modules that require a license, AcceptLicense automatically accepts the license agreement during installation.
-        /// </summary>
-        [Parameter()]
-        public SwitchParameter AcceptLicense
-        {
-            get { return _acceptLicense; }
-
-            set { _acceptLicense = value; }
-        }
-        private SwitchParameter _acceptLicense;
-
-
-        /// <summary>
-        /// Returns the resource as an object to the console.
-        /// </summary>
-        [Parameter()]
-        public SwitchParameter PassThru
-        {
-            get { return _passThru; }
-
-            set { _passThru = value; }
-        }
-        private SwitchParameter _passThru;
-
-
-        // This will be a list of all the repository caches
-        public static readonly List<string> RepoCacheFileName = new List<string>();
-        // Temporarily store cache in this path for testing purposes
-        public static readonly string RepositoryCacheDir = "c:/code/temp/repositorycache"; //@"%APPDTA%\NuGet";
-        private readonly object p;
-
-        // Define the cancellation token.
-        CancellationTokenSource source;
-        CancellationToken cancellationToken;
 
 
         /// <summary>
@@ -309,10 +112,12 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
             source = new CancellationTokenSource();
             cancellationToken = source.Token;
 
+            NuGetVersion nugetVersion;
+            var bleh = NuGetVersion.TryParse(_version, out nugetVersion);
 
             foreach (var pkgName in _name)
             {
-                UninstallHelper(pkgName, cancellationToken);
+                UninstallHelper(pkgName, nugetVersion, cancellationToken);
             }
 
         }
@@ -322,13 +127,13 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
         /// just unintall module, not dependencies
 
 
-        private void UninstallHelper(string pkgName, CancellationToken cancellationToken)
+        private void UninstallHelper(string pkgName, NuGetVersion nugetVersion, CancellationToken cancellationToken)
         {
             // scope, admin rightsget
 
-
             // GET INSTALLED PKG
 
+            // get the latest version from this as well
 
 
             /*
@@ -341,27 +146,40 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
             var dirName = Path.Combine("C:/code/temp/installtestpath", pkgName);
 
 
-            // check versions
-
-            var dirNameVersion = Path.Combine(dirName, );
-
-            if (String.IsNullOrWhiteSpace(dirNameVersion) || !Directory.Exists(dirNameVersion))
+            //  If version specified is *, delete the entire pkg directory
+            if (_version.Equals("*") && _prerelease)
             {
-                return;
-            }
-
-
-
-            if (Directory.GetDirectories(dirName).Length > 1)
-            {
-                // If there's more than one version in the pkg Name directory, just delete the specific version
-                Directory.Delete(dirNameVersion, true);
-            }
-            else
-            {
-                // Otherwise delete 
+                Console.WriteLine("*");
                 Directory.Delete(dirName, true);
             }
+
+
+
+            // check versions
+            // if version is specified, delete that version or version range,
+//            var dirNameVersion = Path.Combine(dirName, pVersion);
+
+
+            // if version is NOT specified, delete the most recent version
+
+
+//            if (String.IsNullOrWhiteSpace(dirNameVersion) || !Directory.Exists(dirNameVersion))
+//            {
+//                return;
+//            }
+
+
+
+//            if (Directory.GetDirectories(dirName).Length > 1)
+//            {
+                // If there's more than one version in the pkg Name directory, just delete the specific version
+//                Directory.Delete(dirNameVersion, true);
+//            }
+//            else
+//            {
+                // Otherwise delete 
+//                Directory.Delete(dirName, true);
+//            }
 
 
 
