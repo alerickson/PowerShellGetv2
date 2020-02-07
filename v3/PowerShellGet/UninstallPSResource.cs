@@ -4,8 +4,8 @@ using System.Management.Automation;
 using System.Threading;
 using NuGet.Versioning;
 using System.IO;
-
-
+using System.Collections.Generic;
+using System.Linq;
 
 namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 {
@@ -38,22 +38,6 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
         }
         private string[] _name; // = new string[0];
 
-        /// <summary>
-        /// Used for pipeline input.
-        /// </summary>
-        [Parameter(Mandatory = true, Position = 0, ValueFromPipeline = true, ValueFromPipelineByPropertyName = true, ParameterSetName = "InputObjectSet")]
-        [ValidateNotNullOrEmpty]
-        public PSCustomObject[] InputObject
-        {
-            get
-            { return _inputObject; }
-
-            set
-            { _inputObject = value; }
-        }
-        private PSCustomObject[] _inputObject; // = new string[0];
-
-
 
         /// <summary>
         /// Specifies the version or version range of the package to be installed
@@ -71,18 +55,18 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
         private string _version;
 
         /// <summary>
-        /// Specifies to allow installation of prerelease versions
+        /// Specifies to allow ONLY prerelease versions to be uninstalled
         /// </summary>
         [Parameter(ParameterSetName = "NameParameterSet")]
-        public SwitchParameter Prerelease
+        public SwitchParameter PrereleaseOnly
         {
             get
-            { return _prerelease; }
+            { return _prereleaseOnly; }
 
             set
-            { _prerelease = value; }
+            { _prereleaseOnly = value; }
         }
-        private SwitchParameter _prerelease;
+        private SwitchParameter _prereleaseOnly;
 
         /// <summary>
         /// Overrides warning messages about resource installation conflicts.
@@ -103,6 +87,8 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
         private CancellationTokenSource source;
         private CancellationToken cancellationToken;
 
+        NuGetVersion nugetVersion;
+        VersionRange versionRange;
 
 
         /// <summary>
@@ -112,28 +98,36 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
             source = new CancellationTokenSource();
             cancellationToken = source.Token;
 
-            NuGetVersion nugetVersion;
+
+
             var bleh = NuGetVersion.TryParse(_version, out nugetVersion);
+
+
+            if (nugetVersion == null)
+            {
+                VersionRange.TryParse(_version, out versionRange); 
+            }
+
+
 
             foreach (var pkgName in _name)
             {
-                UninstallHelper(pkgName, nugetVersion, cancellationToken);
+                UninstallHelper(pkgName, cancellationToken);
             }
 
         }
 
 
 
-        /// just unintall module, not dependencies
+        /// just uninstall module, not dependencies
 
 
-        private void UninstallHelper(string pkgName, NuGetVersion nugetVersion, CancellationToken cancellationToken)
+        private void UninstallHelper(string pkgName, CancellationToken cancellationToken)
         {
-            // scope, admin rightsget
-
-            // GET INSTALLED PKG
-
-            // get the latest version from this as well
+            // consider scope
+           
+            // update later, this is just for testing purposes 
+            var psModulesPath = "C:\\code\\temp\\installtestpath";
 
 
             /*
@@ -143,46 +137,95 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
             }
             */
 
-            var dirName = Path.Combine("C:/code/temp/installtestpath", pkgName);
+
+            List<string> dirsToDelete = new List<string>();
+
+            var dirName = Path.Combine("C:\\code\\temp\\installtestpath", pkgName);
+            var versionDirs = Directory.GetDirectories(dirName);
+            var parentDirFiles = Directory.GetFiles(dirName);
 
 
-            //  If version specified is *, delete the entire pkg directory
-            if (_version.Equals("*") && _prerelease)
+            // First check if module is installed (GET INSTALLED PKG)
+            // If the pkg name isn't valid, or if the pkg directory doesn't exist, or if there's nothing in the pkg directory, simply return
+            if (String.IsNullOrWhiteSpace(pkgName) || !Directory.Exists(dirName) || (versionDirs == null && parentDirFiles == null))
             {
-                Console.WriteLine("*");
-                Directory.Delete(dirName, true);
+                return;
+            }
+
+            // If prereleaseOnly is specified, we'll only take into account prerelease versions of pkgs
+            if (_prereleaseOnly)
+            {
+                List<string> prereleaseOnlyVersionDirs = new List<string>();
+                foreach (var dir in versionDirs)
+                {
+                    var nameOfDir = Path.GetFileName(dir);
+                    var nugVersion = NuGetVersion.Parse(nameOfDir);
+
+                    if (nugVersion.IsPrerelease)
+                    {
+                        prereleaseOnlyVersionDirs.Add(dir);
+                    }
+                }
+                versionDirs = prereleaseOnlyVersionDirs.ToArray();
             }
 
 
 
-            // check versions
-            // if version is specified, delete that version or version range,
-//            var dirNameVersion = Path.Combine(dirName, pVersion);
+
+            // TODOS:
+            // 1)  You cannot uninstall a module if another module is dependent on it (how do i check this easily?)  PSGETMODULEINFO.XML?
+           
+
+            // if the version specificed is a version range
+            if (versionRange != null)
+            {
+            
+                foreach (var versionDirPath in versionDirs)
+                {
+                    var nameOfDir = Path.GetFileName(versionDirPath);
+                    var nugVersion = NuGetVersion.Parse(nameOfDir);
+
+                    if (versionRange.Satisfies(nugVersion))
+                    {
+                        dirsToDelete.Add(versionDirPath);
+                    }
+                }
+            }
+            else if (nugetVersion != null)
+            {
+                // if the version specified is a version
+                
+                dirsToDelete.Add(nugetVersion.ToNormalizedString());
+            }
+            else
+            {
+                // if no version is specified, just delete the latest version
+                Array.Sort(versionDirs);
+
+                dirsToDelete.Add(versionDirs[versionDirs.Length - 1]);
+            }
 
 
-            // if version is NOT specified, delete the most recent version
+
+            // Delete the appropriate directories
+            foreach (var dirVersion in dirsToDelete)
+            {
+                var dirNameVersion = Path.Combine(dirName, dirVersion);
+
+                if (Directory.Exists(dirName))
+                {
+                    Directory.Delete(dirNameVersion.ToString(), true);
+                }
+            }
 
 
-//            if (String.IsNullOrWhiteSpace(dirNameVersion) || !Directory.Exists(dirNameVersion))
-//            {
-//                return;
-//            }
-
-
-
-//            if (Directory.GetDirectories(dirName).Length > 1)
-//            {
-                // If there's more than one version in the pkg Name directory, just delete the specific version
-//                Directory.Delete(dirNameVersion, true);
-//            }
-//            else
-//            {
-                // Otherwise delete 
-//                Directory.Delete(dirName, true);
-//            }
-
-
-
+          
+            // Finally:
+            // Check to see if there's anything left in the parent directory, if not, delete that as well
+            if (Directory.GetDirectories(dirName).Length == 0)
+            {
+                Directory.Delete(dirName, true);
+            }
 
         }
 
