@@ -1,4 +1,4 @@
-﻿  
+﻿
 using System;
 using System.Collections;
 using System.Management.Automation;
@@ -14,6 +14,10 @@ using System.Net;
 using System.Linq;
 using MoreLinq.Extensions;
 using static NuGet.Protocol.Core.Types.PackageSearchMetadataBuilder;
+using System.Xml.Linq;
+using System.IO;
+using System.Runtime.Serialization;
+using System.Text.RegularExpressions;
 
 //using NuGet.Protocol.Core.Types;
 
@@ -22,9 +26,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
 
     /// <summary>
-    /// The Register-PSResourceRepository cmdlet registers the default repository for PowerShell modules.
-    /// After a repository is registered, you can reference it from the Find-PSResource, Install-PSResource, and Publish-PSResource cmdlets.
-    /// The registered repository becomes the default repository in Find-Module and Install-Module.
+    /// The Install-PSResource cmdlet installs a resource.
     /// It returns nothing.
     /// </summary>
 
@@ -127,7 +129,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
         private string[] _repository;
 
         /// <summary>
-        /// Specifies the type of the resource to be searched for. 
+        /// Specifies the type of the resource to be searched for.
         /// </summary>
         [Parameter(ValueFromPipeline = true, ParameterSetName = "NameParameterSet")]
         [ValidateNotNull]
@@ -333,13 +335,13 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
 
             PackageSource source = new PackageSource("https://www.powershellgallery.com/api/v2");
-            
+
             if (_credential != null)
             {
                 string password = new NetworkCredential(string.Empty, _credential.Password).Password;
                 source.Credentials = PackageSourceCredential.FromUserInput("https://www.powershellgallery.com/api/v2", _credential.UserName, password, true, null);
             }
-            
+
             var provider = FactoryExtensionsV3.GetCoreV3(NuGet.Protocol.Core.Types.Repository.Provider);
 
             SourceRepository repository = new SourceRepository(source, provider);
@@ -350,14 +352,14 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
 
 
-            // I think we'll likely need to make a call to find first so that we can ensure we have the right version (if no version is specified) 
-            // Call Find 
+            // I think we'll likely need to make a call to find first so that we can ensure we have the right version (if no version is specified)
+            // Call Find
 
-            // things we know:  at least one name,  we don't know versions though 
+            // things we know:  at least one name,  we don't know versions though
 
             // returnedPkgs
 
-            // IDEA:  use find to find all dependencies... 
+            // IDEA:  use find to find all dependencies...
 
 
 
@@ -395,7 +397,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
                 if (_version == null || _version.Equals("*"))
                 {
-                    // ensure that the latst version is returned first (the ordering of versions differ 
+                    // ensure that the latst version is returned first (the ordering of versions differ
                     filteredFoundPkgs = (resourceMetadata2.GetMetadataAsync(n, _prerelease, false, context2, NullLogger.Instance, cancellationToken).GetAwaiter().GetResult()
                         .OrderByDescending(p => p.Identity.Version, VersionComparer.VersionRelease)
                         .FirstOrDefault());
@@ -405,7 +407,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                     VersionRange versionRange = VersionRange.Parse(_version);
 
                     // Search for packages within a version range
-                    // ensure that the latst version is returned first (the ordering of versions differ 
+                    // ensure that the latst version is returned first (the ordering of versions differ
                     filteredFoundPkgs = (resourceMetadata2.GetMetadataAsync(n, _prerelease, false, context2, NullLogger.Instance, cancellationToken).GetAwaiter().GetResult()
                         .Where(p => versionRange.Satisfies(p.Identity.Version))
                         .OrderByDescending(p => p.Identity.Version, VersionComparer.VersionRelease)
@@ -436,12 +438,12 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
 
                     // need to parse the depenency and version and such
-                    
-                        // need to improve this later
-                        // this function recursively finds all dependencies
-                        // might need to do add instead of AddRange
+
+                    // need to improve this later
+                    // this function recursively finds all dependencies
+                    // might need to do add instead of AddRange
                     foundDependencies.AddRange(FindDependenciesFromSource(filteredFoundPkgs, resourceMetadata2, context2));
-                    
+
 
                 }  /// end dep conditional
 
@@ -454,7 +456,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
                 List<IPackageSearchMetadata> pkgsToInstall = new List<IPackageSearchMetadata>();
 
-                // install pkg, then install any dependencies to a temp directory 
+                // install pkg, then install any dependencies to a temp directory
 
 
                 pkgsToInstall.Add(filteredFoundPkgs);
@@ -462,7 +464,70 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
 
 
-                // install everything
+
+
+
+                /*** NEED TO RESOLVE DEPENDENCIES that are already installed ***/
+                // - we have a list of everything that needs to be installed (dirsToDelete)
+                // - we check the system to see if that particular package AND package version is there (PSModulesPath)
+                // - if it is, we remove it from the list of pkgs to install
+
+                /* goes in install
+                var psModulesPathAllDirs = (Directory.GetDirectories(psModulesPath)).ToList();
+
+
+
+                if (versionRange != null)
+                {
+                    // for each package name passed in
+                    foreach (var name in _name)
+                    {
+                        // Check to see if the package dir exists in the path
+                        if (psModulesPathAllDirs.Contains(name))
+                        {
+                            // then check to see if the package version exists in the path
+                            var pkgDirName= Path.Combine(psModulesPath, name);
+                            var pkgDirVersion = (Directory.GetDirectories(pkgDirName)).ToList();
+
+                            // these are all the packages already installed
+                            var pkgsAlreadyInstalled = pkgDirVersion.FindAll(p => versionRange.Satisfies(NuGetVersion.Parse(p)));
+
+                            dirsToDelete
+
+
+                                //Directory.Delete(dirNameVersion.ToString(), true);
+
+
+                        }
+                    }
+                }
+                if (versionRange != null)
+                {
+                    // for each package name passed in
+                    foreach (var name in _name)
+                    {
+                        // Check to see if the package dir exists in the path
+                        if (psModulesPathAllDirs.Contains(name))
+                        {
+                            // then check to see if the package version exists in the path
+                            var dirNameVersion = Path.Combine(name, );
+
+                            if (Directory.Exists(dirName))
+                            {
+                                Directory.Delete(dirNameVersion.ToString(), true);
+                            }
+
+                        }
+                    }
+                }
+                */
+
+
+
+
+
+
+                // install everything to a temp path
                 foreach (var p in pkgsToInstall)
                 {
                     var pkgIdentity = new PackageIdentity(p.Identity.Id, p.Identity.Version);
@@ -484,9 +549,151 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                         "C:/code/temp/installtestpath",
                         logger: NullLogger.Instance,
                         CancellationToken.None).GetAwaiter().GetResult();
+
+                    // need to close the .nupkg
+                    result.Dispose();
+
+                    var psModulesPathAllDirs = "C:/code/temp/installtestpath";
+
+
+                    // 1) remove the *.nupkg file
+
+                    // may need to modify due to capitalization
+                    var dirNameVersion = Path.Combine(psModulesPathAllDirs, p.Identity.Id, p.Identity.Version.ToNormalizedString());
+                    var nupkgMetadataToDelete = Path.Combine(dirNameVersion, ".nupkg.metadata");
+                    var nupkgToDelete = Path.Combine(dirNameVersion, (p.Identity.Id + "." + p.Identity.Version + ".nupkg").ToLower());
+                    var nupkgSHAToDelete = Path.Combine(dirNameVersion, (p.Identity.Id + "." + p.Identity.Version + ".nupkg.sha512").ToLower());
+                    var nuspecToDelete = Path.Combine(dirNameVersion, (p.Identity.Id + ".nuspec").ToLower());
+
+
+                    File.Delete(nupkgMetadataToDelete);
+                    File.Delete(nupkgSHAToDelete);
+                    File.Delete(nuspecToDelete);
+                    File.Delete(nupkgToDelete);
+
+
+
+                    // 2) Verify that all the proper modules installed correctly and
+
+
+
+                    // 3) create xml
+                    //Create PSGetModuleInfo.xml
+                    //Set attribute as hidden [System.IO.File]::SetAttributes($psgetItemInfopath, [System.IO.FileAttributes]::Hidden)
+
+
+
+                    // Create XMLs
+                    using (StreamWriter sw = new StreamWriter("c:\\code\\temp\\installtestpath\\PSGetModuleInfo.xml"))
+                    {
+                        var psModule = "PSModule";
+
+                        var tags = p.Tags.Split(" ", StringSplitOptions.RemoveEmptyEntries);
+
+
+                        var module = tags.Contains("PSModule") ? "Module" : null;
+                        var script = tags.Contains("PSScript") ? "Script" : null;
+
+
+                        List<string> includesDscResource = new List<string>();
+                        List<string> includesCommand = new List<string>();
+                        List<string> includesFunction = new List<string>();
+                        List<string> includesRoleCapability = new List<string>();
+                        List<string> filteredTags = new List<string>();
+
+                        var psDscResource = "PSDscResource_";
+                        var psCommand = "PSCommand_";
+                        var psFunction = "PSFunction_";
+                        var psRoleCapability = "PSRoleCapability_";
+
+
+
+                        foreach (var tag in tags)
+                        {
+                            if (tag.StartsWith(psDscResource))
+                            {
+                                includesDscResource.Add(tag.Remove(0, psDscResource.Length));
+                            }
+                            else if (tag.StartsWith(psCommand))
+                            {
+                                includesCommand.Add(tag.Remove(0, psCommand.Length));
+                            }
+                            else if (tag.StartsWith(psFunction))
+                            {
+                                includesFunction.Add(tag.Remove(0, psFunction.Length));
+                            }
+                            else if (tag.StartsWith(psRoleCapability))
+                            {
+                                includesRoleCapability.Add(tag.Remove(0, psRoleCapability.Length));
+                            }
+                            else if (!tag.StartsWith("PSWorkflow_") && !tag.StartsWith("PSCmdlet_") && !tag.StartsWith("PSIncludes_")
+                                && !tag.Equals("PSModule") && !tag.Equals("PSScript"))
+                            {
+                                filteredTags.Add(tag);
+                            }
+                        }
+
+                        Dictionary<string, List<string>> includes = new Dictionary<string, List<string>>() {
+                            { "DscResource", includesDscResource },
+                            { "Command", includesCommand },
+                            { "Function", includesFunction },
+                            { "RoleCapability", includesRoleCapability }
+                        };
+
+
+                        Dictionary<string, VersionRange> dependencies = new Dictionary<string, VersionRange>();
+                        foreach (var depGroup in p.DependencySets)
+                        {
+                            PackageDependency depPkg = depGroup.Packages.FirstOrDefault();
+                            dependencies.Add(depPkg.Id, depPkg.VersionRange);
+                        }
+
+
+                        var hash = new Hashtable()
+                            {
+                                {"Name", p.Identity.Id },
+                                {"Version", p.Identity.Version },
+                                {"Type",  module != null ? module : (script != null? script : null) },
+                                {"Description", p.Description },
+                                {"Author", p.Authors},
+                                {"CompanyName", p.Owners },
+                                {"PublishedDate", p.Published },
+                                {"InstalledDate", System.DateTime.Now },
+                                {"LicenseUri", p.LicenseUrl },
+                                {"ProjectUri", p.ProjectUrl },
+                                {"IconUri", p.IconUrl },
+                                {"Tags", filteredTags },
+                                {"Includes", includes.ToList() },                       ////  NOT GETTING DESERIALIZED PROPERLY
+                                {"PowerShellGetFormatVersion", "3" },
+                                {"ReleaseNotes", ""},                                   // TODO:  add release notes
+                                {"Dependencies", dependencies.ToList() },
+                                {"RepositorySourceLocation", repositoryUrl },
+                                {"Repository", repositoryUrl },                         // TODO:  potentially change to repository name later, don't think this is necessary though
+                                {"InstalledLocation", "" }                              // TODO:  add installation location
+                            };
+
+
+
+                        var psGetModuleInfoObj = new PSObject(hash);
+
+                        psGetModuleInfoObj.TypeNames.Add("Microsoft.PowerShell.Commands.PSRepositoryItemInfo");
+
+
+                        var serializedObj = PSSerializer.Serialize(psGetModuleInfoObj);
+                        //PSObject deserializedObj = (PSObject) PSSerializer.Deserialize(serializedObj);
+
+
+
+
+
+                        sw.Write(serializedObj);
+
+                        // set the xml attribute to hidden
+                        //System.IO.File.SetAttributes("c:\\code\\temp\\installtestpath\\PSGetModuleInfo.xml", FileAttributes.Hidden);
+
+                        // 4) copy to proper path
+                    }
                 }
-
-
 
 
             }
@@ -496,7 +703,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
 
 
-           
+
 
 
 
@@ -508,14 +715,14 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
         private List<IPackageSearchMetadata> FindDependenciesFromSource(IPackageSearchMetadata pkg, PackageMetadataResource pkgMetadataResource, SourceCacheContext srcContext)
         {
             /// dependency resolver
-            /// 
+            ///
             /// this function will be recursively called
-            /// 
+            ///
             /// call the findpackages from source helper (potentially generalize this so it's finding packages from source or cache)
-            /// 
+            ///
             List<IPackageSearchMetadata> foundDependencies = new List<IPackageSearchMetadata>();
 
-            // 1)  check the dependencies of this pkg 
+            // 1)  check the dependencies of this pkg
             // 2) for each dependency group, search for the appropriate name and version
             // a dependency group are all the dependencies for a particular framework
             foreach (var dependencyGroup in pkg.DependencySets)
@@ -531,7 +738,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                     // returns all versions from a single package id.
                     var dependencies = pkgMetadataResource.GetMetadataAsync(pkgDependency.Id, _prerelease, true, srcContext, NullLogger.Instance, cancellationToken).GetAwaiter().GetResult();
 
-                    // then 2.2) check if the appropriate verion range exists  (if version exists, then add it to the list to return)       
+                    // then 2.2) check if the appropriate verion range exists  (if version exists, then add it to the list to return)
 
                     VersionRange versionRange = null;
                     try
@@ -554,7 +761,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
                     foundDependencies.Add(depPkgToReturn);
 
-                    // 3) search for any dependencies the pkg has 
+                    // 3) search for any dependencies the pkg has
                     foundDependencies.AddRange(FindDependenciesFromSource(depPkgToReturn, pkgMetadataResource, srcContext));
                 }
             }
