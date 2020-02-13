@@ -6,6 +6,8 @@ using NuGet.Versioning;
 using System.IO;
 using System.Collections.Generic;
 using System.Linq;
+using System.Globalization;
+using System.Collections.ObjectModel;
 
 namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 {
@@ -112,7 +114,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
             foreach (var pkgName in _name)
             {
-                UninstallHelper(pkgName, cancellationToken);
+                UninstallPkgHelper(pkgName, cancellationToken);
             }
 
         }
@@ -122,7 +124,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
         /// just uninstall module, not dependencies
 
 
-        private void UninstallHelper(string pkgName, CancellationToken cancellationToken)
+        private void UninstallPkgHelper(string pkgName, CancellationToken cancellationToken)
         {
             // consider scope
            
@@ -168,12 +170,6 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                 }
                 versionDirs = prereleaseOnlyVersionDirs.ToArray();
             }
-
-
-
-
-            // TODOS:
-            // 1)  You cannot uninstall a module if another module is dependent on it (how do i check this easily?)  PSGETMODULEINFO.XML?
            
 
             // if the version specificed is a version range
@@ -207,6 +203,52 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
 
 
+            /// This is a primitive implementation
+            /// TODO:  implement a dependencies database for querying dependency info
+            /// Cannot uninstall a module if another module is dependent on it 
+        
+            using (System.Management.Automation.PowerShell pwsh = System.Management.Automation.PowerShell.Create())
+            {
+                // Check all modules for dependencies
+                var results = pwsh.AddCommand("Get-Module").AddParameter("ListAvailable").Invoke();
+
+                // Structure of LINQ call:
+                // Results is a collection of PSModuleInfo objects that contain a property listing module dependencies, "RequiredModules".
+                // RequiredModules is collection of PSModuleInfo objects that need to be iterated through to see if any of them are the pkg we're trying to uninstall
+                // If we anything from the final call gets returned, there is a dependency on this pkg.
+                var pkgsWithRequiredModules = results.Where(p => ((ReadOnlyCollection<PSModuleInfo>)p.Properties["RequiredModules"].Value).Where(rm => rm.Name.Equals(pkgName)).Any());
+
+
+                //.Select(p => (p.Properties.Match("Name"), p.Properties.Match("Version")));
+
+                if (pkgsWithRequiredModules.Any())
+                {
+                    var uniquePkgNames = pkgsWithRequiredModules.Select(p => p.Properties["Name"].Value).Distinct().ToArray();
+
+                    var strUniquePkgNames = string.Join(",", uniquePkgNames);
+
+                    throw new System.ArgumentException(string.Format(CultureInfo.InvariantCulture, "Cannot uninstall {0}, the following package(s) take a dependency on this package: {1}", pkgName, strUniquePkgNames));
+
+                }
+            }
+
+
+
+            /*
+            using (StreamReader sr = new StreamReader("c:\\code\\temp\\installtestpath\\PSGetModuleInfo.xml"))
+            {
+
+                string text = sr.ReadToEnd();
+                var deserializedObj = (PSObject)PSSerializer.Deserialize(text);
+
+                var dependencyInfo = deserializedObj.Properties.Match("Dependencies");
+
+            };
+            */
+
+
+
+            
             // Delete the appropriate directories
             foreach (var dirVersion in dirsToDelete)
             {
@@ -227,18 +269,9 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                 Directory.Delete(dirName, true);
             }
 
+   
+
         }
-
-
-
-
-
-
-
-
-
-
-
 
 
     }
