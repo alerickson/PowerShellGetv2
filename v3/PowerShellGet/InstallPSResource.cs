@@ -15,6 +15,8 @@ using System.Linq;
 using MoreLinq.Extensions;
 using System.IO;
 using Microsoft.PowerShell.PowerShellGet.RepositorySettings;
+using System.Globalization;
+using System.Security.Principal;
 
 //using NuGet.Protocol.Core.Types;
 
@@ -309,6 +311,32 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
         {
             source = new CancellationTokenSource();
             cancellationToken = source.Token;
+
+            var id = WindowsIdentity.GetCurrent();
+            var consoleIsElevated = (id.Owner != id.User);
+
+
+            // if Scope is AllUsers and there is no console elevation
+            if (!string.IsNullOrEmpty(_scope) && _scope.Equals("AllUsers") && !consoleIsElevated)
+            {
+                // throw an error when Install-PSResource is used as a non-admin user and '-Scope AllUsers'
+                throw new System.ArgumentException(string.Format(CultureInfo.InvariantCulture, "Install-PSResource requires admin privilege for AllUsers scope."));
+            }
+
+            // if no scope is specified (whether or not the console is elevated) default installation will be to CurrentUser
+            // If running under admin on Windows with PowerShell less than PS6, default will be AllUsers
+            if (string.IsNullOrEmpty(_scope))
+            {
+                _scope = "CurrentUser";
+                if (!Platform.IsCoreCLR && consoleIsElevated)
+                {
+                    _scope = "AllUsers";
+                }
+            }
+            // if scope is Current user & (no elevation or elevation)
+            // install to current user path
+
+
 
 
             var r = new RespositorySettings();
