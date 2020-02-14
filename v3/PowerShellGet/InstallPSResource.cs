@@ -13,11 +13,8 @@ using NuGet.Versioning;
 using System.Net;
 using System.Linq;
 using MoreLinq.Extensions;
-using static NuGet.Protocol.Core.Types.PackageSearchMetadataBuilder;
-using System.Xml.Linq;
 using System.IO;
-using System.Runtime.Serialization;
-using System.Text.RegularExpressions;
+using Microsoft.PowerShell.PowerShellGet.RepositorySettings;
 
 //using NuGet.Protocol.Core.Types;
 
@@ -89,7 +86,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
         /// </summary>
         [Parameter(ParameterSetName = "NameParameterSet")]
         [ValidateNotNullOrEmpty]
-        public string Verison
+        public string Version
         {
             get
             { return _version; }
@@ -296,7 +293,10 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
         public static readonly List<string> RepoCacheFileName = new List<string>();
         // Temporarily store cache in this path for testing purposes
         public static readonly string RepositoryCacheDir = "c:/code/temp/repositorycache"; //@"%APPDTA%\NuGet";
-        private readonly object p;
+
+        // find the env variable for this
+        private static readonly string psModulesPath = "C:/code/temp/installtestpath";
+        private readonly List<string> psModulesPathAllDirs = (Directory.GetDirectories(psModulesPath)).ToList();
 
         // Define the cancellation token.
         CancellationTokenSource source;
@@ -310,17 +310,26 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
             source = new CancellationTokenSource();
             cancellationToken = source.Token;
 
-            var nugVersion = new NuGetVersion("1.2");
+
+            var r = new RespositorySettings();
 
 
-            InstallHelper("PackageManagement", nugVersion, cancellationToken);
+            var listOfRepositories = r.Read(_repository);
+
+            InstallHelper(listOfRepositories[0].Properties["Url"].Value.ToString(), cancellationToken);
+
+           // foreach (var repoName in listOfRepositories)
+            //{
+            //    if (InstallHelper(repoName.Properties["Url"].Value.ToString(), cancellationToken))
+            //    {
+
+            //    }
+            //}
+
         }
 
 
 
-
-        // look at InstallFromSourceAsync
-        // and CreatePackageResolverContext
 
 
         // Installing a package will have a transactional behavior:
@@ -330,16 +339,16 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
         // Installing
 
 
-        private void InstallHelper(string pkgName, NuGetVersion pkgVersion, CancellationToken cancellationToken)
+        public void InstallHelper(string repositoryUrl, CancellationToken cancellationToken)
         {
 
 
-            PackageSource source = new PackageSource("https://www.powershellgallery.com/api/v2");
+            PackageSource source = new PackageSource(repositoryUrl);
 
             if (_credential != null)
             {
                 string password = new NetworkCredential(string.Empty, _credential.Password).Password;
-                source.Credentials = PackageSourceCredential.FromUserInput("https://www.powershellgallery.com/api/v2", _credential.UserName, password, true, null);
+                source.Credentials = PackageSourceCredential.FromUserInput(repositoryUrl, _credential.UserName, password, true, null);
             }
 
             var provider = FactoryExtensionsV3.GetCoreV3(NuGet.Protocol.Core.Types.Repository.Provider);
@@ -365,7 +374,6 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
             //////////////////////  packages from source
             ///
-            var repositoryUrl = "https://www.powershellgallery.com/api/v2";
             PackageSource source2 = new PackageSource(repositoryUrl);
             if (_credential != null)
             {
@@ -395,7 +403,8 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                 // Check version first to narrow down the number of pkgs before potential searching through tags
 
 
-                if (_version == null || _version.Equals("*"))
+                VersionRange versionRange = null;
+                if (_version == null)
                 {
                     // ensure that the latst version is returned first (the ordering of versions differ
                     filteredFoundPkgs = (resourceMetadata2.GetMetadataAsync(n, _prerelease, false, context2, NullLogger.Instance, cancellationToken).GetAwaiter().GetResult()
@@ -404,7 +413,25 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                 }
                 else
                 {
-                    VersionRange versionRange = VersionRange.Parse(_version);
+                    // check if exact version
+                    NuGetVersion nugetVersion;
+
+                    //VersionRange versionRange = VersionRange.Parse(version);
+                    NuGetVersion.TryParse(_version, out nugetVersion);
+                    // throw
+
+                    if (nugetVersion != null)
+                    {
+                        // exact version
+                        versionRange = new VersionRange(nugetVersion, true, nugetVersion, true, null, null);
+                    }
+                    else
+                    {
+                        // check if version range
+                        versionRange = VersionRange.Parse(_version);
+                    }
+
+
 
                     // Search for packages within a version range
                     // ensure that the latst version is returned first (the ordering of versions differ
@@ -415,17 +442,6 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
                 }
 
-                // implementing type later
-                /*
-                if (_type != null)
-                {
-                    filteredFoundPkgs.AddRange(FilterPkgsByResourceType(foundP ackages, filteredFoundPkgs));
-                }
-                */
-                // else type == null
-                // if type is null, we just don't filter on anything for type
-
-
 
                 List<IPackageSearchMetadata> foundDependencies = new List<IPackageSearchMetadata>();
 
@@ -435,7 +451,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                 // Search for dependencies
                 if (filteredFoundPkgs != null)
                 {
-
+                   
 
                     // need to parse the depenency and version and such
 
@@ -458,73 +474,82 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
                 // install pkg, then install any dependencies to a temp directory
 
-
                 pkgsToInstall.Add(filteredFoundPkgs);
                 pkgsToInstall.AddRange(foundDependencies);
 
 
 
-
-
-
-                /*** NEED TO RESOLVE DEPENDENCIES that are already installed ***/
+                /*** NEED TO CHECK IF PKGS ARE ALREADY INSTALLED ***/
                 // - we have a list of everything that needs to be installed (dirsToDelete)
                 // - we check the system to see if that particular package AND package version is there (PSModulesPath)
                 // - if it is, we remove it from the list of pkgs to install
 
-                /* goes in install
-                var psModulesPathAllDirs = (Directory.GetDirectories(psModulesPath)).ToList();
-
-
-
                 if (versionRange != null)
                 {
                     // for each package name passed in
                     foreach (var name in _name)
                     {
+                        var pkgDirName = Path.Combine(psModulesPath, name);
+
                         // Check to see if the package dir exists in the path
-                        if (psModulesPathAllDirs.Contains(name))
+                        if (psModulesPathAllDirs.Contains(pkgDirName, StringComparer.OrdinalIgnoreCase))
                         {
                             // then check to see if the package version exists in the path
-                            var pkgDirName= Path.Combine(psModulesPath, name);
                             var pkgDirVersion = (Directory.GetDirectories(pkgDirName)).ToList();
+                            List<string> pkgVersion = new List<string>();
+                            foreach (var path in pkgDirVersion)
+                            {
+                                pkgVersion.Add(Path.GetFileName(path));
+                            }
+
 
                             // these are all the packages already installed
-                            var pkgsAlreadyInstalled = pkgDirVersion.FindAll(p => versionRange.Satisfies(NuGetVersion.Parse(p)));
-
-                            dirsToDelete
+                            var pkgsAlreadyInstalled = pkgVersion.FindAll(p => versionRange.Satisfies(NuGetVersion.Parse(p)));
 
 
-                                //Directory.Delete(dirNameVersion.ToString(), true);
+                            if (pkgsAlreadyInstalled.Any())
+                            {
+                                // remove the pkg from the list of pkgs that need to be installed
+                                var pkgsToRemove = pkgsToInstall.Find(p => string.Equals(p.Identity.Id, name, StringComparison.CurrentCultureIgnoreCase));
 
+                                pkgsToInstall.Remove(pkgsToRemove);
+                            }
 
                         }
                     }
-                }
-                if (versionRange != null)
+                } // exact version installation
+                else // if (versionRange != null)
                 {
                     // for each package name passed in
                     foreach (var name in _name)
                     {
+                        // case sensitivity issues here!
+                        var dirName = Path.Combine(psModulesPath, name);
+
                         // Check to see if the package dir exists in the path
-                        if (psModulesPathAllDirs.Contains(name))
+                        if (psModulesPathAllDirs.Contains(dirName, StringComparer.OrdinalIgnoreCase))
                         {
-                            // then check to see if the package version exists in the path
-                            var dirNameVersion = Path.Combine(name, );
+                            // then check to see if the package exists in the path
 
                             if (Directory.Exists(dirName))
                             {
-                                Directory.Delete(dirNameVersion.ToString(), true);
+                                // remove the pkg from the list of pkgs that need to be installed
+                                //case sensitivity here 
+                                var pkgsToRemove = pkgsToInstall.Find(p => string.Equals(p.Identity.Id, name, StringComparison.CurrentCultureIgnoreCase));
+
+                                pkgsToInstall.Remove(pkgsToRemove);
+                                //Directory.Delete(dirNameVersion.ToString(), true);
+
                             }
 
                         }
                     }
                 }
-                */
+                
 
 
 
-
+                var installPath = "C:/code/temp/installtestpath";
 
 
                 // install everything to a temp path
@@ -546,20 +571,19 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                     var result = downloadResource.GetDownloadResourceResultAsync(
                         pkgIdentity,
                         new PackageDownloadContext(cacheContext),
-                        "C:/code/temp/installtestpath",
+                        installPath,
                         logger: NullLogger.Instance,
                         CancellationToken.None).GetAwaiter().GetResult();
 
                     // need to close the .nupkg
                     result.Dispose();
 
-                    var psModulesPathAllDirs = "C:/code/temp/installtestpath";
-
+                    // create a download count to see if everything was installed properly
 
                     // 1) remove the *.nupkg file
 
                     // may need to modify due to capitalization
-                    var dirNameVersion = Path.Combine(psModulesPathAllDirs, p.Identity.Id, p.Identity.Version.ToNormalizedString());
+                    var dirNameVersion = Path.Combine(installPath, p.Identity.Id, p.Identity.Version.ToNormalizedString());
                     var nupkgMetadataToDelete = Path.Combine(dirNameVersion, ".nupkg.metadata");
                     var nupkgToDelete = Path.Combine(dirNameVersion, (p.Identity.Id + "." + p.Identity.Version + ".nupkg").ToLower());
                     var nupkgSHAToDelete = Path.Combine(dirNameVersion, (p.Identity.Id + "." + p.Identity.Version + ".nupkg.sha512").ToLower());
@@ -576,15 +600,15 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                     // 2) Verify that all the proper modules installed correctly and
 
 
-
                     // 3) create xml
                     //Create PSGetModuleInfo.xml
                     //Set attribute as hidden [System.IO.File]::SetAttributes($psgetItemInfopath, [System.IO.FileAttributes]::Hidden)
 
 
-
+                    var fullinstallPath = Path.Combine(dirNameVersion, "PSGetModuleInfo.xml");
+                        
                     // Create XMLs
-                    using (StreamWriter sw = new StreamWriter("c:\\code\\temp\\installtestpath\\PSGetModuleInfo.xml"))
+                    using (StreamWriter sw = new StreamWriter(fullinstallPath))
                     {
                         var psModule = "PSModule";
 
@@ -759,12 +783,53 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                         dependencies.Where(v => versionRange.Satisfies(v.Identity.Version)).FirstOrDefault());
 
 
-                    foundDependencies.Add(depPkgToReturn);
+
+
+                    // if the pkg already exists on the system, don't add it to the list of pkgs that need to be installed 
+                    var dirName = Path.Combine(psModulesPath, pkgDependency.Id);
+
+                    var dependencyAlreadyInstalled = false;
+                    
+                    // Check to see if the package dir exists in the path
+                    if (psModulesPathAllDirs.Contains(dirName, StringComparer.OrdinalIgnoreCase))
+                    {
+                        // then check to see if the package exists in the path
+
+                        if (Directory.Exists(dirName))
+                        {
+                            // then check to see if the package version exists in the path
+                            var pkgDirVersion = (Directory.GetDirectories(dirName)).ToList();
+                            List<string> pkgVersion = new List<string>();
+                            foreach (var path in pkgDirVersion)
+                            {
+                                pkgVersion.Add(Path.GetFileName(path));
+                            }
+
+
+                            // these are all the packages already installed
+                            var pkgsAlreadyInstalled = pkgVersion.FindAll(p => versionRange.Satisfies(NuGetVersion.Parse(p)));  // dont think ive tested this path
+
+                            if (pkgsAlreadyInstalled.Any())
+                            {
+                                // don't add the pkg to the list of pkgs that need to be installed
+                                dependencyAlreadyInstalled = true;
+                            }
+                        }
+
+                    }
+
+                    if (!dependencyAlreadyInstalled)
+                    {
+                        foundDependencies.Add(depPkgToReturn);
+                    }
 
                     // 3) search for any dependencies the pkg has
                     foundDependencies.AddRange(FindDependenciesFromSource(depPkgToReturn, pkgMetadataResource, srcContext));
                 }
             }
+
+
+
 
             // flatten after returning
             return foundDependencies;
