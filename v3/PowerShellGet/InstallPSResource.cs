@@ -17,6 +17,7 @@ using System.IO;
 using Microsoft.PowerShell.PowerShellGet.RepositorySettings;
 using System.Globalization;
 using System.Security.Principal;
+using static System.Environment;
 
 //using NuGet.Protocol.Core.Types;
 
@@ -297,8 +298,15 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
         public static readonly string RepositoryCacheDir = "c:/code/temp/repositorycache"; //@"%APPDTA%\NuGet";
 
         // find the env variable for this
-        private static readonly string psModulesPath = "C:/code/temp/installtestpath";
-        private readonly List<string> psModulesPathAllDirs = (Directory.GetDirectories(psModulesPath)).ToList();
+
+        private  string programFilesPath;
+
+        // Path.Join(Environment.GetEnvironmentVariable("ProgramFiles"), "PowerShell", "Modules");
+        private  string myDocumentsPath;
+
+
+        private string psModulesPath;
+        private List<string> psModulesPathAllDirs;
 
         // Define the cancellation token.
         CancellationTokenSource source;
@@ -316,6 +324,26 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
             var consoleIsElevated = (id.Owner != id.User);
 
 
+
+
+            if (!Platform.IsCoreCLR)
+            {
+                programFilesPath = Path.Join(Environment.GetFolderPath(SpecialFolder.ProgramFiles), "WindowsPowerShell", "Modules");
+                var userENVpath = Path.Join(Environment.GetEnvironmentVariable("USERPROFILE"), "Documents");
+
+
+                myDocumentsPath = Path.Join(Environment.GetFolderPath(SpecialFolder.MyDocuments), "WindowsPowerShell", "Modules");
+            }
+            else
+            {
+                programFilesPath = Path.Join(Environment.GetFolderPath(SpecialFolder.ProgramFiles), "PowerShell", "Modules");
+                myDocumentsPath = Path.Join(Environment.GetFolderPath(SpecialFolder.MyDocuments), "PowerShell", "Modules");
+            }
+
+
+
+
+
             // if Scope is AllUsers and there is no console elevation
             if (!string.IsNullOrEmpty(_scope) && _scope.Equals("AllUsers") && !consoleIsElevated)
             {
@@ -328,6 +356,9 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
             if (string.IsNullOrEmpty(_scope))
             {
                 _scope = "CurrentUser";
+
+                //If Windows and elevated default scope will be all users 
+                // If non-Windows or non-elevated default scope will be current user
                 if (!Platform.IsCoreCLR && consoleIsElevated)
                 {
                     _scope = "AllUsers";
@@ -339,10 +370,27 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
 
 
+            psModulesPath = string.Equals(_scope, "AllUsers") ? programFilesPath : myDocumentsPath;
+            psModulesPathAllDirs = (Directory.GetDirectories(psModulesPath)).ToList();
+
+
             var r = new RespositorySettings();
-
-
             var listOfRepositories = r.Read(_repository);
+
+
+            if (string.Equals(listOfRepositories[0].Properties["Trusted"].Value.ToString(), "false", StringComparison.InvariantCultureIgnoreCase) && !_trustRepository && !_force)
+            {
+                // throw error saying repository is not trusted
+               // throw new System.ArgumentException(string.Format(CultureInfo.InvariantCulture, "This repository is not trusted"));  /// we should prompt for user input to accept 
+
+                /*
+                 * Untrusted repository
+                 * You are installing the modules from an untrusted repository.  If you trust this repository, change its InstallationPolicy value by running the Set-PSResourceRepository cmdlet.
+                 * Are you sure you want to install the modules from '<repo name >'?
+                 * [Y]  Yes  [A]  Yes to ALl   [N]  No  [L]  No to all  [s]  suspendd [?] Help  (default is "N"):
+                 */
+
+            }
 
             InstallHelper(listOfRepositories[0].Properties["Url"].Value.ToString(), cancellationToken);
 
@@ -355,6 +403,14 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
             //}
 
         }
+
+
+
+
+
+
+
+
 
 
 
@@ -535,7 +591,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                             var pkgsAlreadyInstalled = pkgVersion.FindAll(p => versionRange.Satisfies(NuGetVersion.Parse(p)));
 
 
-                            if (pkgsAlreadyInstalled.Any())
+                            if (pkgsAlreadyInstalled.Any() && !_reinstall)
                             {
                                 // remove the pkg from the list of pkgs that need to be installed
                                 var pkgsToRemove = pkgsToInstall.Find(p => string.Equals(p.Identity.Id, name, StringComparison.CurrentCultureIgnoreCase));
@@ -559,7 +615,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                         {
                             // then check to see if the package exists in the path
 
-                            if (Directory.Exists(dirName))
+                            if (Directory.Exists(dirName) && !_reinstall)
                             {
                                 // remove the pkg from the list of pkgs that need to be installed
                                 //case sensitivity here 
@@ -575,9 +631,6 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                 }
                 
 
-
-
-                var installPath = "C:/code/temp/installtestpath";
 
 
                 // install everything to a temp path
@@ -599,7 +652,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                     var result = downloadResource.GetDownloadResourceResultAsync(
                         pkgIdentity,
                         new PackageDownloadContext(cacheContext),
-                        installPath,
+                        psModulesPath,
                         logger: NullLogger.Instance,
                         CancellationToken.None).GetAwaiter().GetResult();
 
@@ -611,7 +664,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                     // 1) remove the *.nupkg file
 
                     // may need to modify due to capitalization
-                    var dirNameVersion = Path.Combine(installPath, p.Identity.Id, p.Identity.Version.ToNormalizedString());
+                    var dirNameVersion = Path.Combine(psModulesPath, p.Identity.Id, p.Identity.Version.ToNormalizedString());
                     var nupkgMetadataToDelete = Path.Combine(dirNameVersion, ".nupkg.metadata");
                     var nupkgToDelete = Path.Combine(dirNameVersion, (p.Identity.Id + "." + p.Identity.Version + ".nupkg").ToLower());
                     var nupkgSHAToDelete = Path.Combine(dirNameVersion, (p.Identity.Id + "." + p.Identity.Version + ".nupkg.sha512").ToLower());
@@ -837,7 +890,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                             // these are all the packages already installed
                             var pkgsAlreadyInstalled = pkgVersion.FindAll(p => versionRange.Satisfies(NuGetVersion.Parse(p)));  // dont think ive tested this path
 
-                            if (pkgsAlreadyInstalled.Any())
+                            if (pkgsAlreadyInstalled.Any() && !_reinstall)
                             {
                                 // don't add the pkg to the list of pkgs that need to be installed
                                 dependencyAlreadyInstalled = true;
