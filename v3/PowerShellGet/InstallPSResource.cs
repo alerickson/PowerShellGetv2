@@ -392,15 +392,25 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
             }
 
-            InstallHelper(listOfRepositories[0].Properties["Url"].Value.ToString(), cancellationToken);
+            //InstallHelper(listOfRepositories[0].Properties["Url"].Value.ToString(), cancellationToken);
 
-           // foreach (var repoName in listOfRepositories)
-            //{
-            //    if (InstallHelper(repoName.Properties["Url"].Value.ToString(), cancellationToken))
-            //    {
 
-            //    }
-            //}
+            List<string> pkgsLeftToInstall = _name.ToList();
+            foreach (var repoName in listOfRepositories)
+            {
+                // if it can't find the pkg in one repository, it'll look in the next one in the list 
+                // returns any pkgs that weren't found
+                var returnedPkgsNotInstalled = InstallHelper(repoName.Properties["Url"].Value.ToString(), pkgsLeftToInstall, cancellationToken);
+                if (!pkgsLeftToInstall.Any())
+                {
+                    return;
+                }
+                pkgsLeftToInstall = returnedPkgsNotInstalled;
+            }
+
+
+
+
 
         }
 
@@ -423,8 +433,10 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
         // Installing
 
 
-        public void InstallHelper(string repositoryUrl, CancellationToken cancellationToken)
+        public List<string> InstallHelper(string repositoryUrl, List<string> pkgsLeftToInstall, CancellationToken cancellationToken)
         {
+
+
 
 
             PackageSource source = new PackageSource(repositoryUrl);
@@ -555,7 +567,6 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
 
                 List<IPackageSearchMetadata> pkgsToInstall = new List<IPackageSearchMetadata>();
-
                 // install pkg, then install any dependencies to a temp directory
 
                 pkgsToInstall.Add(filteredFoundPkgs);
@@ -629,9 +640,9 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                         }
                     }
                 }
-                
 
 
+                var tempInstallPath = "c:\\code\\temp\\installationpath";
 
                 // install everything to a temp path
                 foreach (var p in pkgsToInstall)
@@ -659,6 +670,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                     // need to close the .nupkg
                     result.Dispose();
 
+
                     // create a download count to see if everything was installed properly
 
                     // 1) remove the *.nupkg file
@@ -678,7 +690,6 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
 
 
-                    // 2) Verify that all the proper modules installed correctly and
 
 
                     // 3) create xml
@@ -796,8 +807,18 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                         // set the xml attribute to hidden
                         //System.IO.File.SetAttributes("c:\\code\\temp\\installtestpath\\PSGetModuleInfo.xml", FileAttributes.Hidden);
 
+
+
                         // 4) copy to proper path
+
+
+                        // 2) Verify that all the proper modules installed correctly 
+
+
                     }
+
+                    pkgsLeftToInstall.Remove(n);
+
                 }
 
 
@@ -811,7 +832,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
 
 
-
+            return pkgsLeftToInstall;
 
         }
 
