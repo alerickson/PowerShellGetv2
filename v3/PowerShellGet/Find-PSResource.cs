@@ -90,7 +90,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
         /// </summary>
         [Parameter(ParameterSetName = "NameParameterSet")]
         [ValidateNotNullOrEmpty]
-        public string Verison
+        public string Version
         {
             get
             { return _version; }
@@ -177,6 +177,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
         /// Specifies to return any dependency packages.
         /// Currently only used when name param is specified.
         /// </summary>
+        [Parameter(ValueFromPipelineByPropertyName = true, ParameterSetName = "NameParameterSet")]
         public SwitchParameter IncludeDependencies
         {
             get { return _includeDependencies; }
@@ -226,7 +227,8 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
 
             // Flatten returned pkgs before displaying output returnedPkgsFound.Flatten().ToList()[0]
-            var test = returnedPkgsFound.Flatten().ToList();
+            var flattenedPkgs = returnedPkgsFound.Flatten();
+            // flattenedPkgs.ToList();
 
 
         }
@@ -286,7 +288,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                 foreach (var n in _name)
                 {
                     var foundPkgs = FindPackagesFromSourceHelper(repositoryUrl, n, resourceSearch, resourceMetadata, filter, context);
-                    if (foundPkgs.Any())
+                    if (foundPkgs.Any() && foundPkgs.FirstOrDefault() != null)
                     {
                         returnedPkgs.AddRange(foundPkgs);
                         pkgsLeftToFind.Remove(n);
@@ -785,23 +787,38 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                 else
                 {
                     // try to parse into a singular NuGet version
-                    //NuGetVersion specificVersion = new NuGetVersion(_version);
+                    NuGetVersion specificVersion;
+                    NuGetVersion.TryParse(_version, out specificVersion);
 
-                    // maybe try catch this
-                    VersionRange versionRange = VersionRange.Parse(_version);
+                    foundPackages.RemoveAll(p => true);
+                    VersionRange versionRange = null;
+
+                    if (specificVersion != null)
+                    {
+                        // exact version
+                        versionRange = new VersionRange(specificVersion, true, specificVersion, true, null, null);
+                    }
+                    else
+                    {
+                        // maybe try catch this
+                        // check if version range
+                        versionRange = VersionRange.Parse(_version);
+
+                    }
 
 
-                    //VersionRange versionRange = (specificVersion == null) ? VersionRange.Parse(_version) : new VersionRange(specificVersion, true, specificVersion, true, null, null);
-
-                    //IEnumerable<IPackageSearchMetadata> tempFoundPkgsVersionRange = pkgMetadataResource.GetMetadataAsync(name, _prerelease, false, srcContext, NullLogger.Instance, cancellationToken).GetAwaiter().GetResult();
-                    //var versionsWithinRange = tempFoundPkgsVersionRange.Where(p => versionRange.Satisfies(p.Identity.Version));
 
                     // Search for packages within a version range
                     // ensure that the latst version is returned first (the ordering of versions differ
-                    filteredFoundPkgs.Add(pkgMetadataResource.GetMetadataAsync(name, _prerelease, false, srcContext, NullLogger.Instance, cancellationToken).GetAwaiter().GetResult()
+                    // test wth  Find-PSResource 'Carbon' -Version '[,2.4.0)'
+                    foundPackages.Add(pkgMetadataResource.GetMetadataAsync(name, _prerelease, false, srcContext, NullLogger.Instance, cancellationToken).GetAwaiter().GetResult()
                         .Where(p => versionRange.Satisfies(p.Identity.Version))
                         .OrderByDescending(p => p.Identity.Version, VersionComparer.VersionRelease));
 
+                    // choose the most recent version -- it's not doing this right now
+                    int toRemove = foundPackages.First().Count() - 1;
+                    var singlePkg = (System.Linq.Enumerable.SkipLast(foundPackages.FirstOrDefault(), toRemove));
+                    filteredFoundPkgs.Add(singlePkg);
                 }
             }
             else // version is null
@@ -825,22 +842,36 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
             // TAGS
             /// should move this to the last thing that gets filtered
             char[] delimiter = new char[] { ' ', ',' };
-            var flattenedPkgs = foundPackages.Flatten();
+            var flattenedPkgs = filteredFoundPkgs.Flatten().ToList();
             if (_tags != null)
             {
-                foreach (IEnumerable<IPackageSearchMetadata> p in flattenedPkgs)
+                // clear filteredfoundPkgs because we'll just be adding back the pkgs we we
+                filteredFoundPkgs.RemoveAll(p => true);
+                var pkgsFilteredByTags = new List<IPackageSearchMetadata>();
+
+                foreach (IPackageSearchMetadata p in flattenedPkgs)
                 {
                     // Enumerable.ElementAt(0)
-                    var tagArray = p.FirstOrDefault().Tags.Split(delimiter, StringSplitOptions.RemoveEmptyEntries);
+                    var tagArray = p.Tags.Split(delimiter, StringSplitOptions.RemoveEmptyEntries);
 
                     foreach (string t in _tags)
                     {
                         // if the pkg contains one of the tags we're searching for
-                        if (tagArray.Contains(t))
+                        if (tagArray.Contains(t, StringComparer.OrdinalIgnoreCase))
                         {
-                            filteredFoundPkgs.Add(p);
+                            pkgsFilteredByTags.Add(p);
                         }
                     }
+                }
+                // make sure just adding one pkg if not * versions
+                if (_version != "*")
+                {
+                    filteredFoundPkgs.Add(pkgsFilteredByTags.DistinctBy(p => p.Identity.Id));
+                }
+                else
+                {
+                    // if we want all version, make sure there's only one package id/version in the returned list.
+                    filteredFoundPkgs.Add(pkgsFilteredByTags.DistinctBy(p => p.Identity.Version));
                 }
             }
 
@@ -899,21 +930,20 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
             // Search for dependencies
             if (_includeDependencies && filteredFoundPkgs.Any())
             {
-                Console.WriteLine("START");
-                // pkg title
-                Console.WriteLine("-----");
-                // pkg Tags.ToJson(0)
-
                 List<IEnumerable<IPackageSearchMetadata>> foundDependencies = new List<IEnumerable<IPackageSearchMetadata>>();
 
                 // need to parse the depenency and version and such
-                var filteredFoundPkgsFlattened = (IEnumerable<IPackageSearchMetadata>)filteredFoundPkgs.Flatten();
-                foreach (var pkg in filteredFoundPkgsFlattened)
+                var filteredFoundPkgsFlattened = filteredFoundPkgs.Flatten();
+                foreach (IPackageSearchMetadata pkg in filteredFoundPkgsFlattened)
                 {
                     // need to improve this later
                     // this function recursively finds all dependencies
-                    foundDependencies.AddRange(FindDependenciesFromSource(pkg, pkgMetadataResource, srcContext));
+                    // change into an ieunumerable (helpful for the finddependenciesfromsource function)
+
+                    foundDependencies.AddRange(FindDependenciesFromSource(Enumerable.Repeat(pkg, 1), pkgMetadataResource, srcContext));
                 }
+
+                filteredFoundPkgs.AddRange(foundDependencies);
             }
 
             // return foundPackages;
@@ -923,7 +953,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
 
 
-        private List<IEnumerable<IPackageSearchMetadata>> FindDependenciesFromSource(IPackageSearchMetadata pkg, PackageMetadataResource pkgMetadataResource, SourceCacheContext srcContext)
+        private List<IEnumerable<IPackageSearchMetadata>> FindDependenciesFromSource(IEnumerable<IPackageSearchMetadata> pkg, PackageMetadataResource pkgMetadataResource, SourceCacheContext srcContext)
         {
             /// dependency resolver
             ///
@@ -936,7 +966,8 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
             // 1)  check the dependencies of this pkg
             // 2) for each dependency group, search for the appropriate name and version
             // a dependency group are all the dependencies for a particular framework
-            foreach (var dependencyGroup in pkg.DependencySets)
+            // first or default because we need this pkg to be an ienumerable (so we don't need to be doing strange object conversions)
+            foreach (var dependencyGroup in pkg.FirstOrDefault().DependencySets)
             {
 
                 //dependencyGroup.TargetFramework
@@ -963,17 +994,21 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
 
 
+                    // choose the most recent version
+                    int toRemove = dependencies.Count() - 1;
+
                     // if no version/version range is specified the we just return the latest version
+                    var depPkgToReturn = (versionRange == null ?
+                        dependencies.FirstOrDefault() :
+                        dependencies.Where(v => versionRange.Satisfies(v.Identity.Version)).FirstOrDefault());
 
-                    IEnumerable<IPackageSearchMetadata> depPkgToReturn = (versionRange == null ?
-                        (IEnumerable<IPackageSearchMetadata>)dependencies.FirstOrDefault() :
-                        (IEnumerable<IPackageSearchMetadata>)dependencies.Where(v => versionRange.Satisfies(v.Identity.Version)).FirstOrDefault());
 
 
-                    foundDependencies.Add(depPkgToReturn);
+                    // using the repeat function to convert the IPackageSearchMetadata object into an enumerable.
+                    foundDependencies.Add(Enumerable.Repeat(depPkgToReturn, 1));
 
                     // 3) search for any dependencies the pkg has
-                    foundDependencies.AddRange(FindDependenciesFromSource(depPkgToReturn.FirstOrDefault(), pkgMetadataResource, srcContext));
+                    foundDependencies.AddRange(FindDependenciesFromSource(Enumerable.Repeat(depPkgToReturn, 1), pkgMetadataResource, srcContext));
                 }
             }
 
