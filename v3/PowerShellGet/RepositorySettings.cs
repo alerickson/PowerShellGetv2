@@ -26,7 +26,7 @@ namespace Microsoft.PowerShell.PowerShellGet.RepositorySettings
         public static readonly string DefaultRepositoryPath = "c:/code/temp"; //@"%APPDTA%\NuGet";
         public static readonly string DefaultFullRepositoryPath = Path.Combine(DefaultRepositoryPath, DefaultRepositoryFileName);
 
-        public RespositorySettings(){}
+        public RespositorySettings() { }
 
         /// <summary>
         /// Find a repository XML
@@ -62,7 +62,7 @@ namespace Microsoft.PowerShell.PowerShellGet.RepositorySettings
                     new XElement("configuration")
             );
 
-            // Should be saved in: 
+            // Should be saved in:
             newRepoXML.Save(DefaultFullRepositoryPath);
         }
 
@@ -90,15 +90,16 @@ namespace Microsoft.PowerShell.PowerShellGet.RepositorySettings
             {
                 CreateNewRepositoryXML();
             }
-            catch {
+            catch
+            {
                 throw new ArgumentException("Was not able to successfully create xml");
             }
 
-            // Open file 
+            // Open file
             XDocument doc = XDocument.Load(DefaultFullRepositoryPath);
 
             // Check if what's being added already exists, if it does throw an error
-            var node = doc.Descendants("Repository").SingleOrDefault(e => (string)e.Attribute("Url") == repoURL.AbsoluteUri);
+            var node = doc.Descendants("Repository").SingleOrDefault(e => string.Equals(e.Attribute("Url").ToString(), repoURL.AbsoluteUri, StringComparison.InvariantCultureIgnoreCase));
             if (node != null)
             {
                 throw new ArgumentException(String.Format("The PSResource Repository '{0}' already exists.", repoName));
@@ -146,11 +147,11 @@ namespace Microsoft.PowerShell.PowerShellGet.RepositorySettings
                 throw new ArgumentException("Was not able to successfully find xml-- try registering a repository first");
             }
 
-            // Open file 
+            // Open file
             XDocument doc = XDocument.Load(DefaultFullRepositoryPath);
 
             // Check if what's being updated is actually there first
-            var node = doc.Descendants("Repository").SingleOrDefault(e => (string)e.Attribute("Name") == repoName);
+            var node = doc.Descendants("Repository").SingleOrDefault(e => string.Equals(e.Attribute("Name").ToString(), repoName, StringComparison.InvariantCultureIgnoreCase));
             if (node == null)
             {
                 throw new ArgumentException("Cannot find the repository because it does not exist. try registering the repository");
@@ -177,7 +178,7 @@ namespace Microsoft.PowerShell.PowerShellGet.RepositorySettings
             {
                 node.Attribute("Trusted").Value = repoTrusted.ToString();
             }
-           
+
             // Close the file
             root.Save(DefaultFullRepositoryPath);
         }
@@ -201,8 +202,8 @@ namespace Microsoft.PowerShell.PowerShellGet.RepositorySettings
             {
                 throw new ArgumentException("Was not able to successfully find xml");
             }
-            
-            // Open file 
+
+            // Open file
             XDocument doc = XDocument.Load(DefaultFullRepositoryPath);
 
             // Get root of XDocument (XElement)
@@ -211,13 +212,13 @@ namespace Microsoft.PowerShell.PowerShellGet.RepositorySettings
             foreach (var repo in repoNames)
             {
                 // Check if what's being added doesn't already exist, throw an error
-                var node = doc.Descendants("Repository").SingleOrDefault(e => (string)e.Attribute("Name") == repo.ToString());
-                
+                var node = doc.Descendants("Repository").SingleOrDefault(e => string.Equals(e.Attribute("Name").ToString(), repo, StringComparison.InvariantCultureIgnoreCase));
+
                 if (node == null)
                 {
                     throw new ArgumentException(String.Format("Unable to find repository '{0}'.  Use Get-PSResourceRepository to see all available repositories.", repo));
                 }
-                
+
                 // Remove item from file
                 node.Remove();
             }
@@ -235,14 +236,14 @@ namespace Microsoft.PowerShell.PowerShellGet.RepositorySettings
                 throw new ArgumentException("Was not able to successfully find xml");
             }
 
-            // Open file 
+            // Open file
             XDocument doc = XDocument.Load(DefaultFullRepositoryPath);
 
             var foundRepos = new List<PSObject>();
-            if (repoNames.Length == 0)
+            if (repoNames == null || string.Equals(repoNames[0], "*"))
             {
-                // array is null and we will list all repositories 
-                // iterate through the doc 
+                // array is null and we will list all repositories
+                // iterate through the doc
                 foreach (var repo in doc.Descendants("Repository"))
                 {
                     PSObject repoAsPSObject = new PSObject();
@@ -257,10 +258,10 @@ namespace Microsoft.PowerShell.PowerShellGet.RepositorySettings
             else
             {
                 foreach (var repo in repoNames)
-                {       
+                {
                     // Check to see if repository exists
                     // need to fix the case sensitivity
-                    var node = doc.Descendants("Repository").SingleOrDefault(e => (string)e.Attribute("Name") == repo.ToString()) ;
+                    var node = doc.Descendants("Repository").SingleOrDefault(e => string.Equals(e.Attribute("Name").ToString(), repo, StringComparison.InvariantCultureIgnoreCase));
 
                     if (node != null)
                     {
