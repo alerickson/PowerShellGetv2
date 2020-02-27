@@ -18,6 +18,7 @@ using Microsoft.PowerShell.PowerShellGet.RepositorySettings;
 using System.Globalization;
 using System.Security.Principal;
 using static System.Environment;
+using System.Security.AccessControl;
 
 //using NuGet.Protocol.Core.Types;
 
@@ -295,19 +296,21 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
         // This will be a list of all the repository caches
         public static readonly List<string> RepoCacheFileName = new List<string>();
         // Temporarily store cache in this path for testing purposes
-        public static readonly string RepositoryCacheDir = "c:/code/temp/repositorycache"; //@"%APPDTA%\NuGet";
-
-        // find the env variable for this
-
-        private  string programFilesPath;
-
-        // Path.Join(Environment.GetEnvironmentVariable("ProgramFiles"), "PowerShell", "Modules");
-        private  string myDocumentsPath;
+        public static readonly string RepositoryCacheDir = Path.Join(Environment.GetFolderPath(SpecialFolder.LocalApplicationData), "PowerShellGet", "RepositoryCache");
+        //public static readonly string RepositoryCacheDir = @"%APPDATA%/PowerShellGet/repositorycache"; //"c:/code/temp/repositorycache"; //@"%APPDTA%\NuGet";
 
 
+
+        private string programFilesPath;
+        private string myDocumentsPath;
+
+
+        private string psPath;
         private string psModulesPath;
+        private string psScriptsPath;
         private List<string> psModulesPathAllDirs;
-
+        private List<string> psScriptsPathAllDirs;
+        private List<string> pkgsLeftToInstall;
         // Define the cancellation token.
         CancellationTokenSource source;
         CancellationToken cancellationToken;
@@ -328,16 +331,17 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
             if (!Platform.IsCoreCLR)
             {
-                programFilesPath = Path.Join(Environment.GetFolderPath(SpecialFolder.ProgramFiles), "WindowsPowerShell", "Modules");
+                programFilesPath = Path.Join(Environment.GetFolderPath(SpecialFolder.ProgramFiles), "WindowsPowerShell");
+                /// TODO:  Come back to this
                 var userENVpath = Path.Join(Environment.GetEnvironmentVariable("USERPROFILE"), "Documents");
 
 
-                myDocumentsPath = Path.Join(Environment.GetFolderPath(SpecialFolder.MyDocuments), "WindowsPowerShell", "Modules");
+                myDocumentsPath = Path.Join(Environment.GetFolderPath(SpecialFolder.MyDocuments), "WindowsPowerShell");
             }
             else
             {
-                programFilesPath = Path.Join(Environment.GetFolderPath(SpecialFolder.ProgramFiles), "PowerShell", "Modules");
-                myDocumentsPath = Path.Join(Environment.GetFolderPath(SpecialFolder.MyDocuments), "PowerShell", "Modules");
+                programFilesPath = Path.Join(Environment.GetFolderPath(SpecialFolder.ProgramFiles), "PowerShell");
+                myDocumentsPath = Path.Join(Environment.GetFolderPath(SpecialFolder.MyDocuments), "PowerShell");
             }
 
 
@@ -370,9 +374,13 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
 
 
-            psModulesPath = string.Equals(_scope, "AllUsers") ? programFilesPath : myDocumentsPath;
+            psPath = string.Equals(_scope, "AllUsers") ? programFilesPath : myDocumentsPath;
+            psModulesPath = Path.Combine(psPath, "Modules");
+            psScriptsPath = Path.Combine(psPath, "Scripts");
+            
+            
             psModulesPathAllDirs = (Directory.GetDirectories(psModulesPath)).ToList();
-
+            psScriptsPathAllDirs = (Directory.GetDirectories(psScriptsPath)).ToList();
 
             var r = new RespositorySettings();
             var listOfRepositories = r.Read(_repository);
@@ -381,7 +389,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
             if (string.Equals(listOfRepositories[0].Properties["Trusted"].Value.ToString(), "false", StringComparison.InvariantCultureIgnoreCase) && !_trustRepository && !_force)
             {
                 // throw error saying repository is not trusted
-               // throw new System.ArgumentException(string.Format(CultureInfo.InvariantCulture, "This repository is not trusted"));  /// we should prompt for user input to accept 
+                // throw new System.ArgumentException(string.Format(CultureInfo.InvariantCulture, "This repository is not trusted"));  /// we should prompt for user input to accept 
 
                 /*
                  * Untrusted repository
@@ -392,10 +400,9 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
             }
 
-            //InstallHelper(listOfRepositories[0].Properties["Url"].Value.ToString(), cancellationToken);
 
 
-            List<string> pkgsLeftToInstall = _name.ToList();
+            pkgsLeftToInstall = _name.ToList();
             foreach (var repoName in listOfRepositories)
             {
                 // if it can't find the pkg in one repository, it'll look in the next one in the list 
@@ -495,7 +502,6 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
                 IPackageSearchMetadata filteredFoundPkgs = null;
 
-
                 // Check version first to narrow down the number of pkgs before potential searching through tags
 
 
@@ -547,7 +553,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                 // Search for dependencies
                 if (filteredFoundPkgs != null)
                 {
-                   
+
 
                     // need to parse the depenency and version and such
 
@@ -585,17 +591,26 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                     foreach (var name in _name)
                     {
                         var pkgDirName = Path.Combine(psModulesPath, name);
+                        var pkgDirNameScript = Path.Combine(psScriptsPath, name);
 
                         // Check to see if the package dir exists in the path
-                        if (psModulesPathAllDirs.Contains(pkgDirName, StringComparer.OrdinalIgnoreCase))
+                        if (psModulesPathAllDirs.Contains(pkgDirName, StringComparer.OrdinalIgnoreCase)
+                            || psScriptsPathAllDirs.Contains(pkgDirNameScript, StringComparer.OrdinalIgnoreCase))
                         {
+
+
                             // then check to see if the package version exists in the path
                             var pkgDirVersion = (Directory.GetDirectories(pkgDirName)).ToList();
+                            // check scripts path too
+                            pkgDirVersion.AddRange((Directory.GetDirectories(pkgDirNameScript)).ToList());
+
+
                             List<string> pkgVersion = new List<string>();
                             foreach (var path in pkgDirVersion)
                             {
                                 pkgVersion.Add(Path.GetFileName(path));
                             }
+
 
 
                             // these are all the packages already installed
@@ -608,6 +623,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                                 var pkgsToRemove = pkgsToInstall.Find(p => string.Equals(p.Identity.Id, name, StringComparison.CurrentCultureIgnoreCase));
 
                                 pkgsToInstall.Remove(pkgsToRemove);
+                                pkgsLeftToInstall.Remove(name);
                             }
 
                         }
@@ -619,20 +635,25 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                     foreach (var name in _name)
                     {
                         // case sensitivity issues here!
+
                         var dirName = Path.Combine(psModulesPath, name);
+                        var dirNameScript = Path.Combine(psModulesPath, name);
+
 
                         // Check to see if the package dir exists in the path
-                        if (psModulesPathAllDirs.Contains(dirName, StringComparer.OrdinalIgnoreCase))
+                        if (psModulesPathAllDirs.Contains(dirName, StringComparer.OrdinalIgnoreCase)
+                             || psScriptsPathAllDirs.Contains(dirNameScript, StringComparer.OrdinalIgnoreCase))
                         {
                             // then check to see if the package exists in the path
 
-                            if (Directory.Exists(dirName) && !_reinstall)
+                            if (Directory.Exists(dirName) || Directory.Exists(dirNameScript) && !_reinstall)
                             {
                                 // remove the pkg from the list of pkgs that need to be installed
                                 //case sensitivity here 
                                 var pkgsToRemove = pkgsToInstall.Find(p => string.Equals(p.Identity.Id, name, StringComparison.CurrentCultureIgnoreCase));
 
                                 pkgsToInstall.Remove(pkgsToRemove);
+                                pkgsLeftToInstall.Remove(name);
                                 //Directory.Delete(dirNameVersion.ToString(), true);
 
                             }
@@ -641,8 +662,15 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                     }
                 }
 
+                var tempInstallPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+                var dir = Directory.CreateDirectory(tempInstallPath);  // should check it gets created properly
+                //dir.SetAccessControl(new DirectorySecurity(dir.FullName, AccessControlSections.Owner));
+                // To delete file attributes from the existing ones get the current file attributes first and use AND (&) operator
+                // with a mask (bitwise complement of desired attributes combination).
+                dir.Attributes = dir.Attributes & ~FileAttributes.ReadOnly;
 
-                var tempInstallPath = "c:\\code\\temp\\installationpath";
+                //remove any null pkgs
+                pkgsToInstall.Remove(null);
 
                 // install everything to a temp path
                 foreach (var p in pkgsToInstall)
@@ -653,7 +681,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                     var resource = new DownloadResourceV2FeedProvider();
                     var resource2 = resource.TryCreate(repository, cancellationToken);
 
-                    // Act
+                   
                     var cacheContext = new SourceCacheContext();
 
 
@@ -663,7 +691,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                     var result = downloadResource.GetDownloadResourceResultAsync(
                         pkgIdentity,
                         new PackageDownloadContext(cacheContext),
-                        psModulesPath,
+                        tempInstallPath,
                         logger: NullLogger.Instance,
                         CancellationToken.None).GetAwaiter().GetResult();
 
@@ -676,10 +704,10 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                     // 1) remove the *.nupkg file
 
                     // may need to modify due to capitalization
-                    var dirNameVersion = Path.Combine(psModulesPath, p.Identity.Id, p.Identity.Version.ToNormalizedString());
+                    var dirNameVersion = Path.Combine(tempInstallPath, p.Identity.Id, p.Identity.Version.ToNormalizedString());
                     var nupkgMetadataToDelete = Path.Combine(dirNameVersion, ".nupkg.metadata");
-                    var nupkgToDelete = Path.Combine(dirNameVersion, (p.Identity.Id + "." + p.Identity.Version + ".nupkg").ToLower());
-                    var nupkgSHAToDelete = Path.Combine(dirNameVersion, (p.Identity.Id + "." + p.Identity.Version + ".nupkg.sha512").ToLower());
+                    var nupkgToDelete = Path.Combine(dirNameVersion, (p.Identity.ToString() + ".nupkg").ToLower());
+                    var nupkgSHAToDelete = Path.Combine(dirNameVersion, (p.Identity.ToString() + ".nupkg.sha512").ToLower());
                     var nuspecToDelete = Path.Combine(dirNameVersion, (p.Identity.Id + ".nuspec").ToLower());
 
 
@@ -689,16 +717,20 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                     File.Delete(nupkgToDelete);
 
 
-
-
+                    // if it's not a script, do the following:
+                    var scriptPath = Path.Combine(dirNameVersion, (p.Identity.Id.ToString() + ".ps1").ToLower());
+                    var isScript = File.Exists(scriptPath) ? true : false;
 
                     // 3) create xml
                     //Create PSGetModuleInfo.xml
                     //Set attribute as hidden [System.IO.File]::SetAttributes($psgetItemInfopath, [System.IO.FileAttributes]::Hidden)
 
+                    
+                    
+                    var fullinstallPath = isScript ? Path.Combine(dirNameVersion, (p.Identity.Id + "_InstalledScriptInfo.xml"))
+                        : Path.Combine(dirNameVersion, "PSGetModuleInfo.xml");
 
-                    var fullinstallPath = Path.Combine(dirNameVersion, "PSGetModuleInfo.xml");
-                        
+                      
                     // Create XMLs
                     using (StreamWriter sw = new StreamWriter(fullinstallPath))
                     {
@@ -804,18 +836,47 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
                         sw.Write(serializedObj);
 
-                        // set the xml attribute to hidden
-                        //System.IO.File.SetAttributes("c:\\code\\temp\\installtestpath\\PSGetModuleInfo.xml", FileAttributes.Hidden);
+                            // set the xml attribute to hidden
+                            //System.IO.File.SetAttributes("c:\\code\\temp\\installtestpath\\PSGetModuleInfo.xml", FileAttributes.Hidden);
 
 
 
-                        // 4) copy to proper path
 
-
-                        // 2) Verify that all the proper modules installed correctly 
 
 
                     }
+                    
+
+
+                    // 4) copy to proper path
+
+                    // or move to script path
+                    // check for failures
+                    // var newPath = Directory.CreateDirectory(Path.Combine(psModulesPath, p.Identity.Id, p.Identity.Version.ToNormalizedString()));
+
+                    var installPath = isScript ? psScriptsPath : psModulesPath;
+                    var newPath = isScript ? installPath
+                        : Path.Combine(installPath, p.Identity.Id.ToString());
+                    // when we move the directory over, we'll change the casing of the module directory name from lower case to proper casing.
+                    
+                    // if script, just move the files over, if module, move the version directory overp
+                    var tempModuleVersionDir = isScript ? Path.Combine(tempInstallPath, p.Identity.Id.ToLower(), p.Identity.Version.ToNormalizedString())
+                        : Path.Combine(tempInstallPath, p.Identity.Id.ToLower());
+
+                    if (isScript)
+                    {
+                        var scriptXML = p.Identity.Id + "_InstalledScriptInfo.xml";
+                        File.Move(Path.Combine(tempModuleVersionDir, scriptXML), Path.Combine(psScriptsPath, "InstalledScriptInfos", scriptXML));
+                        File.Move(Path.Combine(tempModuleVersionDir, p.Identity.Id.ToLower() + ".ps1"), Path.Combine(newPath, p.Identity.Id + ".ps1"));
+                    }
+                    else
+                    {
+                        Directory.Move(tempModuleVersionDir, newPath);
+                    }
+
+
+                    // 2) TODO: Verify that all the proper modules installed correctly 
+
 
                     pkgsLeftToInstall.Remove(n);
 
