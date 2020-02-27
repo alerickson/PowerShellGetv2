@@ -8,6 +8,7 @@ using System.IO;
 using System.Collections.Generic;
 using Newtonsoft.Json;
 using System.Data;
+using static System.Environment;
 //using Microsoft.Extensions.DependencyModel;
 
 namespace Microsoft.PowerShell.PowerShellGet
@@ -23,7 +24,8 @@ namespace Microsoft.PowerShell.PowerShellGet
         /// Also, the user level setting file at '%APPDATA%\NuGet' always uses this name
         /// </summary>
 //        public static readonly string DefaultCacheFileName = "PSResourceRepository.xml";
-        public static readonly string DefaultCachePath = "c:/code/temp/repositorycache"; //@"%APPDTA%\NuGet";
+        public static readonly string DefaultCachePath = Path.Join(Environment.GetFolderPath(SpecialFolder.LocalApplicationData), "PowerShellGet", "RepositoryCache");
+        //public static readonly string DefaultCachePath = @"%APPDATA%/PowerShellGet/repositorycache";    //@"%APPDTA%\NuGet";   // c:\code\temp\repositorycache
                                                                                          //        public static readonly string DefaultFullCachePath = Path.Combine(DefaultCachePath, DefaultCacheFileName);
 
         public static string DefaultFullCachePath = "";

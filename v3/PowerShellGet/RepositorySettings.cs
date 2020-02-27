@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Management.Automation;
 using System.Xml.Linq;
 using System.Linq;
+using static System.Environment;
 
 namespace Microsoft.PowerShell.PowerShellGet.RepositorySettings
 {
@@ -23,7 +24,7 @@ namespace Microsoft.PowerShell.PowerShellGet.RepositorySettings
         /// Also, the user level setting file at '%APPDATA%\NuGet' always uses this name
         /// </summary>
         public static readonly string DefaultRepositoryFileName = "PSResourceRepository.xml";
-        public static readonly string DefaultRepositoryPath = "c:/code/temp"; //@"%APPDTA%\NuGet";
+        public static readonly string DefaultRepositoryPath = Path.Join(Environment.GetFolderPath(SpecialFolder.LocalApplicationData), "PowerShellGet"); //"%APPDATA%/PowerShellGet";  // c:\code\temp\repositorycache
         public static readonly string DefaultFullRepositoryPath = Path.Combine(DefaultRepositoryPath, DefaultRepositoryFileName);
 
         public RespositorySettings() { }
@@ -55,6 +56,12 @@ namespace Microsoft.PowerShell.PowerShellGet.RepositorySettings
             if (FindRepositoryXML())
             {
                 return;
+            }
+
+            // create directory if needed
+            if (!Directory.Exists(DefaultRepositoryPath))
+            {
+                Directory.CreateDirectory(DefaultRepositoryPath);
             }
 
             // If the repository xml file doesn't exist yet, create one
@@ -240,7 +247,7 @@ namespace Microsoft.PowerShell.PowerShellGet.RepositorySettings
             XDocument doc = XDocument.Load(DefaultFullRepositoryPath);
 
             var foundRepos = new List<PSObject>();
-            if (repoNames == null || string.Equals(repoNames[0], "*"))
+            if (!repoNames.Any() || string.Equals(repoNames[0], "*"))
             {
                 // array is null and we will list all repositories
                 // iterate through the doc
