@@ -86,7 +86,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
         }
         private SwitchParameter _force;
 
-
+        public static readonly string OsPlatform = System.Runtime.InteropServices.RuntimeInformation.OSDescription;
         private string programFilesPath;
         private string myDocumentsPath;
 
@@ -121,6 +121,13 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                 VersionRange.TryParse(_version, out versionRange); 
             }
 
+            var windowsIdentity = WindowsIdentity.GetCurrent();
+            // identity name and authentication type.
+            string authenticationType = windowsIdentity.AuthenticationType;
+            string userName = windowsIdentity.Name;
+            GenericIdentity authenticatedGenericIdentity =
+                new GenericIdentity(userName, authenticationType);
+
 
 
             var id = WindowsIdentity.GetCurrent();
@@ -131,19 +138,20 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
 
             // Paths
-            if (!Platform.IsCoreCLR)
+            //if (!Platform.IsCoreCLR)
+            if (OsPlatform.ToLower().Contains("windows"))
             {
-                programFilesPath = Path.Join(Environment.GetFolderPath(SpecialFolder.ProgramFiles), "WindowsPowerShell");
+                programFilesPath = Path.Combine(Environment.GetFolderPath(SpecialFolder.ProgramFiles), "WindowsPowerShell");
                 // TODO: Come back to this
                 //var userENVpath = Path.Join(Environment.GetEnvironmentVariable("USERPROFILE"), "Documents");
 
 
-                myDocumentsPath = Path.Join(Environment.GetFolderPath(SpecialFolder.MyDocuments), "WindowsPowerShell");
+                myDocumentsPath = Path.Combine(Environment.GetFolderPath(SpecialFolder.MyDocuments), "WindowsPowerShell");
             }
             else
             {
-                programFilesPath = Path.Join(Environment.GetFolderPath(SpecialFolder.ProgramFiles), "PowerShell");
-                myDocumentsPath = Path.Join(Environment.GetFolderPath(SpecialFolder.MyDocuments), "PowerShell");
+                programFilesPath = Path.Combine(Environment.GetFolderPath(SpecialFolder.ProgramFiles), "PowerShell");
+                myDocumentsPath = Path.Combine(Environment.GetFolderPath(SpecialFolder.MyDocuments), "PowerShell");
             }
 
 

@@ -24,7 +24,7 @@ namespace Microsoft.PowerShell.PowerShellGet
         /// Also, the user level setting file at '%APPDATA%\NuGet' always uses this name
         /// </summary>
 //        public static readonly string DefaultCacheFileName = "PSResourceRepository.xml";
-        public static readonly string DefaultCachePath = Path.Join(Environment.GetFolderPath(SpecialFolder.LocalApplicationData), "PowerShellGet", "RepositoryCache");
+        public static readonly string DefaultCachePath = Path.Combine(Environment.GetFolderPath(SpecialFolder.LocalApplicationData), "PowerShellGet", "RepositoryCache");
         //public static readonly string DefaultCachePath = @"%APPDATA%/PowerShellGet/repositorycache";    //@"%APPDTA%\NuGet";   // c:\code\temp\repositorycache
                                                                                          //        public static readonly string DefaultFullCachePath = Path.Combine(DefaultCachePath, DefaultCacheFileName);
 

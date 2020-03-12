@@ -19,8 +19,9 @@ using System.Globalization;
 using System.Security.Principal;
 using static System.Environment;
 using System.Security.AccessControl;
-
-//using NuGet.Protocol.Core.Types;
+using System.Reflection;
+using System.Runtime.Versioning;
+using System.Security.Claims;
 
 namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 {
@@ -75,15 +76,15 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
         /// </summary>
         [Parameter(ValueFromPipeline = true, ValueFromPipelineByPropertyName = true, ParameterSetName = "NameParameterSet")]
         [ValidateNotNullOrEmpty]
-        public string[] DestinationPath
+        public string DestinationPath
         {
             get
-            { return _type; }
+            { return _destinationPath; }
 
             set
-            { _type = value; }
+            { _destinationPath = value; }
         }
-        private string[] _type;
+        private string _destinationPath;
 
         /// <summary>
         /// Specifies the version or version range of the package to be installed
@@ -129,34 +130,8 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
         }
         private string[] _repository;
 
-        /// <summary>
-        /// Specifies the type of the resource to be searched for.
-        /// </summary>
-        [Parameter(ValueFromPipeline = true, ParameterSetName = "NameParameterSet")]
-        [ValidateNotNull]
-        public string[] Tags
-        {
-            get
-            { return _tags; }
 
-            set
-            { _tags = value; }
-        }
-        private string[] _tags;
-
-        /// <summary>
-        /// Specify which repositories to search in.
-        /// </summary>
-        [ValidateNotNullOrEmpty]
-        [Parameter(ValueFromPipeline = true, ParameterSetName = "NameParameterSet")]
-        public string[] Repositories
-        {
-            get { return _repositories; }
-
-            set { _repositories = value; }
-        }
-        private string[] _repositories;
-
+     
         /// <summary>
         /// Specifies a user account that has rights to find a resource from a specific repository.
         /// </summary>
@@ -296,8 +271,9 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
         // This will be a list of all the repository caches
         public static readonly List<string> RepoCacheFileName = new List<string>();
         // Temporarily store cache in this path for testing purposes
-        public static readonly string RepositoryCacheDir = Path.Join(Environment.GetFolderPath(SpecialFolder.LocalApplicationData), "PowerShellGet", "RepositoryCache");
+        public static readonly string RepositoryCacheDir = Path.Combine(Environment.GetFolderPath(SpecialFolder.LocalApplicationData), "PowerShellGet", "RepositoryCache");
         //public static readonly string RepositoryCacheDir = @"%APPDATA%/PowerShellGet/repositorycache"; //"c:/code/temp/repositorycache"; //@"%APPDTA%\NuGet";
+        public static readonly string OsPlatform = System.Runtime.InteropServices.RuntimeInformation.OSDescription;
 
 
 
@@ -323,25 +299,27 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
             source = new CancellationTokenSource();
             cancellationToken = source.Token;
 
+   
             var id = WindowsIdentity.GetCurrent();
             var consoleIsElevated = (id.Owner != id.User);
 
 
-
-
-            if (!Platform.IsCoreCLR)
+           
+           // TODO:  Test this!           
+            // if not core CLR
+            if (OsPlatform.ToLower().Contains("windows"))
             {
-                programFilesPath = Path.Join(Environment.GetFolderPath(SpecialFolder.ProgramFiles), "WindowsPowerShell");
+                programFilesPath = Path.Combine(Environment.GetFolderPath(SpecialFolder.ProgramFiles), "WindowsPowerShell");
                 /// TODO:  Come back to this
-                var userENVpath = Path.Join(Environment.GetEnvironmentVariable("USERPROFILE"), "Documents");
+                var userENVpath = Path.Combine(Environment.GetEnvironmentVariable("USERPROFILE"), "Documents");
 
 
-                myDocumentsPath = Path.Join(Environment.GetFolderPath(SpecialFolder.MyDocuments), "WindowsPowerShell");
+                myDocumentsPath = Path.Combine(Environment.GetFolderPath(SpecialFolder.MyDocuments), "WindowsPowerShell");
             }
             else
             {
-                programFilesPath = Path.Join(Environment.GetFolderPath(SpecialFolder.ProgramFiles), "PowerShell");
-                myDocumentsPath = Path.Join(Environment.GetFolderPath(SpecialFolder.MyDocuments), "PowerShell");
+                programFilesPath = Path.Combine(Environment.GetFolderPath(SpecialFolder.ProgramFiles), "PowerShell");
+                myDocumentsPath = Path.Combine(Environment.GetFolderPath(SpecialFolder.MyDocuments), "PowerShell");
             }
 
 
@@ -363,7 +341,11 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
                 //If Windows and elevated default scope will be all users 
                 // If non-Windows or non-elevated default scope will be current user
-                if (!Platform.IsCoreCLR && consoleIsElevated)
+               
+
+                // TODO:  TEST Come back here!!!!!
+               // if (!Platform.IsCoreCLR && consoleIsElevated)
+               if (OsPlatform.ToLower().Contains("windows"))
                 {
                     _scope = "AllUsers";
                 }
@@ -602,7 +584,8 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                             // then check to see if the package version exists in the path
                             var pkgDirVersion = (Directory.GetDirectories(pkgDirName)).ToList();
                             // check scripts path too
-                            pkgDirVersion.AddRange((Directory.GetDirectories(pkgDirNameScript)).ToList());
+                            // TODO:  check if script is installed???
+                            // pkgDirVersion.AddRange((Directory.GetDirectories(pkgDirNameScript)).ToList());
 
 
                             List<string> pkgVersion = new List<string>();
@@ -736,7 +719,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                     {
                         var psModule = "PSModule";
 
-                        var tags = p.Tags.Split(" ", StringSplitOptions.RemoveEmptyEntries);
+                        var tags = p.Tags.Split(' ');
 
 
                         var module = tags.Contains("PSModule") ? "Module" : null;
@@ -850,6 +833,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
                     // 4) copy to proper path
 
+                    // TODO: test installing a script when it already exists
                     // or move to script path
                     // check for failures
                     // var newPath = Directory.CreateDirectory(Path.Combine(psModulesPath, p.Identity.Id, p.Identity.Version.ToNormalizedString()));
@@ -871,12 +855,22 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                     }
                     else
                     {
-                        Directory.Move(tempModuleVersionDir, newPath);
+                        if (!Directory.Exists(newPath))
+                        {                                   
+                            Directory.Move(tempModuleVersionDir, newPath);
+                        }
+                        else
+                        {
+                            // If the module directory path already exists, Directory.Move throws an exception, so we'll just move the version directory over instead 
+                            tempModuleVersionDir = Path.Combine(tempModuleVersionDir, p.Identity.Version.ToNormalizedString());
+                            Directory.Move(tempModuleVersionDir, Path.Combine(newPath, p.Identity.Version.ToNormalizedString()));
+                        }
                     }
 
 
                     // 2) TODO: Verify that all the proper modules installed correctly 
-
+                    // remove temp directory recursively
+                    Directory.Delete(tempInstallPath, true);
 
                     pkgsLeftToInstall.Remove(n);
 

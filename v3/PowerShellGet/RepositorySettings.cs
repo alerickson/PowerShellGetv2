@@ -24,7 +24,7 @@ namespace Microsoft.PowerShell.PowerShellGet.RepositorySettings
         /// Also, the user level setting file at '%APPDATA%\NuGet' always uses this name
         /// </summary>
         public static readonly string DefaultRepositoryFileName = "PSResourceRepository.xml";
-        public static readonly string DefaultRepositoryPath = Path.Join(Environment.GetFolderPath(SpecialFolder.LocalApplicationData), "PowerShellGet"); //"%APPDATA%/PowerShellGet";  // c:\code\temp\repositorycache
+        public static readonly string DefaultRepositoryPath = Path.Combine(Environment.GetFolderPath(SpecialFolder.LocalApplicationData), "PowerShellGet"); //"%APPDATA%/PowerShellGet";  // c:\code\temp\repositorycache
         public static readonly string DefaultFullRepositoryPath = Path.Combine(DefaultRepositoryPath, DefaultRepositoryFileName);
 
         public RespositorySettings() { }
@@ -106,7 +106,7 @@ namespace Microsoft.PowerShell.PowerShellGet.RepositorySettings
             XDocument doc = XDocument.Load(DefaultFullRepositoryPath);
 
             // Check if what's being added already exists, if it does throw an error
-            var node = doc.Descendants("Repository").SingleOrDefault(e => string.Equals(e.Attribute("Url").ToString(), repoURL.AbsoluteUri, StringComparison.InvariantCultureIgnoreCase));
+            var node = doc.Descendants("Repository").Where(e => string.Equals(e.Attribute("Url").ToString(), repoURL.AbsoluteUri, StringComparison.OrdinalIgnoreCase)).FirstOrDefault();
             if (node != null)
             {
                 throw new ArgumentException(String.Format("The PSResource Repository '{0}' already exists.", repoName));
@@ -158,7 +158,7 @@ namespace Microsoft.PowerShell.PowerShellGet.RepositorySettings
             XDocument doc = XDocument.Load(DefaultFullRepositoryPath);
 
             // Check if what's being updated is actually there first
-            var node = doc.Descendants("Repository").SingleOrDefault(e => string.Equals(e.Attribute("Name").ToString(), repoName, StringComparison.InvariantCultureIgnoreCase));
+            var node = doc.Descendants("Repository").Where(e => string.Equals(e.Attribute("Name").Value, repoName, StringComparison.InvariantCultureIgnoreCase)).FirstOrDefault();
             if (node == null)
             {
                 throw new ArgumentException("Cannot find the repository because it does not exist. try registering the repository");
@@ -219,7 +219,7 @@ namespace Microsoft.PowerShell.PowerShellGet.RepositorySettings
             foreach (var repo in repoNames)
             {
                 // Check if what's being added doesn't already exist, throw an error
-                var node = doc.Descendants("Repository").SingleOrDefault(e => string.Equals(e.Attribute("Name").ToString(), repo, StringComparison.InvariantCultureIgnoreCase));
+                var node = doc.Descendants("Repository").Where(e => string.Equals(e.Attribute("Name").Value, repo, StringComparison.InvariantCultureIgnoreCase)).FirstOrDefault();
 
                 if (node == null)
                 {
@@ -247,7 +247,7 @@ namespace Microsoft.PowerShell.PowerShellGet.RepositorySettings
             XDocument doc = XDocument.Load(DefaultFullRepositoryPath);
 
             var foundRepos = new List<PSObject>();
-            if (!repoNames.Any() || string.Equals(repoNames[0], "*"))
+            if (repoNames == null || !repoNames.Any() || string.Equals(repoNames[0], "*"))
             {
                 // array is null and we will list all repositories
                 // iterate through the doc
@@ -268,7 +268,7 @@ namespace Microsoft.PowerShell.PowerShellGet.RepositorySettings
                 {
                     // Check to see if repository exists
                     // need to fix the case sensitivity
-                    var node = doc.Descendants("Repository").SingleOrDefault(e => string.Equals(e.Attribute("Name").ToString(), repo, StringComparison.InvariantCultureIgnoreCase));
+                    var node = doc.Descendants("Repository").Where(e => string.Equals(e.Attribute("Name").Value, repo, StringComparison.InvariantCultureIgnoreCase)).FirstOrDefault();
 
                     if (node != null)
                     {

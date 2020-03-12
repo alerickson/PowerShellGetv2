@@ -81,6 +81,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
         protected override void ProcessRecord()
         {
             // list all installation locations:
+            // TODO: update paths
             var psModulePath = "C:\\code\\temp\\sinstalltestpath";
 
 
