@@ -3,38 +3,34 @@
 
 
 using System;
-using System.Collections;
 using System.Management.Automation;
 using System.Collections.Generic;
 using NuGet.Configuration;
-
 using NuGet.Common;
 using NuGet.Protocol;
 using NuGet.Protocol.Core.Types;
-using System.Threading.Tasks;
 using System.Threading;
 using LinqKit;
 using MoreLinq.Extensions;
-using NuGet.Common;
-using NuGet.Configuration;
-using NuGet.Packaging;
-using NuGet.Packaging.Core;
-using NuGet.Protocol;
-using NuGet.Protocol.Core.Types;
 using NuGet.Versioning;
-using System;
-using System.Collections;
-using System.Collections.Generic;
 using System.Data;
 using System.Linq;
-using System.Linq.Expressions;
-using System.Management.Automation;
 using System.Net;
-using System.Reflection;
-using System.Runtime.CompilerServices;
-using System.Threading;
 using Microsoft.PowerShell.PowerShellGet.RepositorySettings;
-using static NuGet.Protocol.Core.Types.PackageSearchMetadataBuilder;
+using System.Net.Http;
+using NuGet.Protocol.Catalog;
+using Microsoft.Extensions.Logging;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Threading.Tasks;
+using Newtonsoft.Json;
+using NuGet.Protocol;
+using NuGet.Protocol.Core.Types;
+using static System.Environment;
+
 
 //using NuGet.Protocol.Core.Types;
 
@@ -192,13 +188,15 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
         // This will be a list of all the repository caches
         public static readonly List<string> RepoCacheFileName = new List<string>();
         // Temporarily store cache in this path for testing purposes
-        public static readonly string RepositoryCacheDir = "c:/code/temp/repositorycache"; //@"%APPDTA%\NuGet";
-        private readonly object p;
+        public static readonly string RepositoryCacheDir = Path.Combine(Environment.GetFolderPath(SpecialFolder.LocalApplicationData), "PowerShellGet", "RepositoryCache");
+        //public static readonly string RepositoryCacheDir = @"%APPDATA%/PowerShellGet/repositorycache";//@"%APPDTA%\NuGet";
+        //private readonly object p;
 
         // Define the cancellation token.
         CancellationTokenSource source;
         CancellationToken cancellationToken;
         List<string> pkgsLeftToFind;
+        private const string CursorFileName = "cursor.json";
 
         /// <summary>
         /// </summary>
@@ -216,25 +214,195 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
             pkgsLeftToFind = _name.ToList();
             foreach (var repoName in listOfRepositories)
             {
+
+                // if using v3 endpoint 
+                // TODO:  add wildcard condition here
+                ProcessCatalogReader(repoName.Properties["Name"].Value.ToString(), repoName.Properties["Url"].Value.ToString()); 
+
                 // if it can't find the pkg in one repository, it'll look in the next one in the list
                 // returns any pkgs found, and any pkgs that weren't found
                 returnedPkgsFound.AddRange(FindPackagesFromSource(repoName.Properties["Url"].Value.ToString(), cancellationToken));
+
+
+                // Flatten returned pkgs before displaying output returnedPkgsFound.Flatten().ToList()[0]
+                var flattenedPkgs = returnedPkgsFound.Flatten();
+                // flattenedPkgs.ToList();
+
+                foreach (IPackageSearchMetadata pkg in flattenedPkgs)
+                {
+                    //WriteObject(pkg);
+
+
+                    PSObject pkgAsPSObject = new PSObject();
+                    pkgAsPSObject.Members.Add(new PSNoteProperty("Name", pkg.Identity.Id));
+                    pkgAsPSObject.Members.Add(new PSNoteProperty("Version", pkg.Identity.Version));
+                    pkgAsPSObject.Members.Add(new PSNoteProperty("Repository", repoName.Properties["Name"].Value.ToString()));
+                    pkgAsPSObject.Members.Add(new PSNoteProperty("Description", pkg.Description));
+
+                    WriteObject(pkgAsPSObject);
+
+                }
+
+
+
                 if (!pkgsLeftToFind.Any())
                 {
                     break;
                 }
-            }
 
 
-            // Flatten returned pkgs before displaying output returnedPkgsFound.Flatten().ToList()[0]
-            var flattenedPkgs = returnedPkgsFound.Flatten();
-            // flattenedPkgs.ToList();
+
+            } // end of foreach
+
 
 
         }
 
 
+        public void ProcessCatalogReader(string repoName, string sourceUrl)
+        {
 
+            // test initalizing a cursor see: https://docs.microsoft.com/en-us/nuget/guides/api/query-for-all-published-packages
+            // we want all packages published from the beginning of time
+            //       DateTime cursor = DateTime.MinValue;
+
+            //2)  using the @id proper
+
+            /////////  NEW CODE
+            ///// Use nuget.org's V3 package source URL, a.k.a. the service index.
+           // var sourceUrl = "https://api.nuget.org/v3/index.json";
+
+            // Define a lower time bound for leaves to fetch. This exclusive minimum time bound is called the cursor.
+            //var cursor = DateTime.MinValue;   /// come back to this GetCursor();
+            var cursor = GetCursor();     // come back to this
+
+
+
+
+            // Discover the catalog index URL from the service index.
+            var catalogIndexUrl = GetCatalogIndexUrlAsync(sourceUrl).GetAwaiter().GetResult();
+
+
+            var httpClient = new HttpClient();
+
+            // Download the catalog index and deserialize it.
+            var indexString = httpClient.GetStringAsync(catalogIndexUrl).GetAwaiter().GetResult();
+            Console.WriteLine($"Fetched catalog index {catalogIndexUrl}.");
+            var index = JsonConvert.DeserializeObject<CatalogIndex>(indexString);
+
+            // Find all pages in the catalog index that meet the time bound.
+
+            var pageItems = index
+                .Items
+                .Where(x => x.CommitTimestamp > cursor);
+
+            var allLeafItems = new List<CatalogLeafItem>();
+
+
+            foreach (var pageItem in pageItems)  /// need to process one page at a time
+            {
+                // Download the catalog page and deserialize it.
+                var pageString = httpClient.GetStringAsync(pageItem.Url).GetAwaiter().GetResult();
+                Console.WriteLine($"Fetched catalog page {pageItem.Url}.");
+                var page = JsonConvert.DeserializeObject<CatalogPage>(pageString);
+
+                // Find all leaves in the catalog page that meet the time bound.
+                var pageLeafItems = page
+                    .Items
+                    .Where(x => x.CommitTimestamp > cursor);
+
+                allLeafItems.AddRange(pageLeafItems);
+
+
+                // local
+                FindLocalPackagesResourceV2 localResource = new FindLocalPackagesResourceV2(sourceUrl);
+
+                LocalPackageSearchResource localResourceSearch = new LocalPackageSearchResource(localResource);
+                LocalPackageMetadataResource localResourceMetadata = new LocalPackageMetadataResource(localResource);
+
+                SearchFilter filter = new SearchFilter(_prerelease);
+                SourceCacheContext context = new SourceCacheContext();
+
+
+
+                // url
+                PackageSource source = new PackageSource(sourceUrl);
+                if (_credential != null)
+                {
+                    string password = new NetworkCredential(string.Empty, _credential.Password).Password;
+                    source.Credentials = PackageSourceCredential.FromUserInput(sourceUrl, _credential.UserName, password, true, null);
+                }
+                var provider = FactoryExtensionsV3.GetCoreV3(NuGet.Protocol.Core.Types.Repository.Provider);
+
+                SourceRepository repository = new SourceRepository(source, provider);
+                PackageSearchResource resourceSearch = repository.GetResourceAsync<PackageSearchResource>().GetAwaiter().GetResult();
+                PackageMetadataResource resourceMetadata = repository.GetResourceAsync<PackageMetadataResource>().GetAwaiter().GetResult();
+
+
+
+
+                // Process all of the catalog leaf items.
+                Console.WriteLine($"Processing {allLeafItems.Count} catalog leaves.");
+                foreach (var leafItem in allLeafItems)
+                {
+                    // TODO:  FILTER BASED ON INPUT!!!!!!!!!!!!!  TAGS, ETC.
+
+
+                    // ProcessCatalogLeaf(leafItem, );
+
+                    //_name = new string[] { leafItem.PackageId };
+                    _version = leafItem.PackageVersion;
+
+
+                    IEnumerable<IPackageSearchMetadata> foundPkgs;
+                    if (sourceUrl.StartsWith("file://"))
+                    {
+                        foundPkgs = FindPackagesFromSourceHelper(sourceUrl, leafItem.PackageId, localResourceSearch, localResourceMetadata, filter, context).FirstOrDefault();
+                    }
+                    else
+                    {
+                        foundPkgs = FindPackagesFromSourceHelper(sourceUrl, leafItem.PackageId, resourceSearch, resourceMetadata, filter, context).FirstOrDefault();
+                    }
+
+                    if (foundPkgs.Any())
+                    {
+                        // First or default to convert the ienumeraable object into just an IPackageSearchmetadata object
+                        var pkgToOutput = foundPkgs.FirstOrDefault();//foundPkgs.Cast<IPackageSearchMetadata>();
+
+                        PSObject pkgAsPSObject = new PSObject();
+                        pkgAsPSObject.Members.Add(new PSNoteProperty("Name", pkgToOutput.Identity.Id));
+                        pkgAsPSObject.Members.Add(new PSNoteProperty("Version", pkgToOutput.Identity.Version));
+                        pkgAsPSObject.Members.Add(new PSNoteProperty("Repository", repoName));
+                        pkgAsPSObject.Members.Add(new PSNoteProperty("Description", pkgToOutput.Description));
+                        
+                        WriteObject(pkgAsPSObject);
+                    }
+
+                }
+
+            }
+
+            /*
+            allLeafItems = allLeafItems
+                .OrderBy(x => x.CommitTimestamp)
+                .ToList();pws
+            */
+
+          
+
+
+            /*
+            // If we have processed any items, write the new cursor.
+            if (allLeafItems.Any())
+            {
+                var newCursor = allLeafItems.Max(x => x.CommitTimestamp);
+                SetCursor(newCursor.DateTime);
+            }
+            */
+
+
+
+        }
 
         //
         public List<IEnumerable<IPackageSearchMetadata>> FindPackagesFromSource(string repositoryUrl, CancellationToken cancellationToken)
@@ -265,15 +433,23 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
             }
             else
             {
+
+               
+
                 PackageSource source = new PackageSource(repositoryUrl);
                 if (_credential != null)
                 {
                     string password = new NetworkCredential(string.Empty, _credential.Password).Password;
                     source.Credentials = PackageSourceCredential.FromUserInput(repositoryUrl, _credential.UserName, password, true, null);
                 }
-                var provider = FactoryExtensionsV3.GetCoreV3(NuGet.Protocol.Core.Types.Repository.Provider);
 
+    
+
+                var provider = FactoryExtensionsV3.GetCoreV3(NuGet.Protocol.Core.Types.Repository.Provider);
+               
                 SourceRepository repository = new SourceRepository(source, provider);
+
+
                 PackageSearchResource resourceSearch = repository.GetResourceAsync<PackageSearchResource>().GetAwaiter().GetResult();
                 PackageMetadataResource resourceMetadata = repository.GetResourceAsync<PackageMetadataResource>().GetAwaiter().GetResult();
 
@@ -287,11 +463,14 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
                 foreach (var n in _name)
                 {
-                    var foundPkgs = FindPackagesFromSourceHelper(repositoryUrl, n, resourceSearch, resourceMetadata, filter, context);
-                    if (foundPkgs.Any() && foundPkgs.FirstOrDefault() != null)
+                    if (pkgsLeftToFind.Any())
                     {
-                        returnedPkgs.AddRange(foundPkgs);
-                        pkgsLeftToFind.Remove(n);
+                        var foundPkgs = FindPackagesFromSourceHelper(repositoryUrl, n, resourceSearch, resourceMetadata, filter, context);
+                        if (foundPkgs.Any() && foundPkgs.FirstOrDefault() != null)
+                        {
+                            returnedPkgs.AddRange(foundPkgs);
+                            pkgsLeftToFind.Remove(n);
+                        }
                     }
                 }
             }
@@ -728,6 +907,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
             List<IEnumerable<IPackageSearchMetadata>> foundPackages = new List<IEnumerable<IPackageSearchMetadata>>();
             //IEnumerable<IPackageSearchMetadata> foundPackages;
+            List<IEnumerable<IPackageSearchMetadata>> filteredFoundPkgs = new List<IEnumerable<IPackageSearchMetadata>>();
 
             // If module name is specified, use that as the name for the pkg to search for
             if (_moduleName != null)
@@ -749,19 +929,86 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                 else
                 {
                     // TODO:  follow up on this
-                    foundPackages.Add(pkgSearchResource.SearchAsync(name, searchFilter, 0, 6000, NullLogger.Instance, cancellationToken).GetAwaiter().GetResult());
-                    //foundPackages = pkgSearchResource.SearchAsync(name, searchFilter, 0, 6000, NullLogger.Instance, cancellationToken).GetAwaiter().GetResult();
+                    //foundPackages.Add(pkgSearchResource.SearchAsync(name, searchFilter, 0, 6000, NullLogger.Instance, cancellationToken).GetAwaiter().GetResult());
+                   
+                    name = name.Equals("*") ? "" : name;   // can't use * in v3 protocol
+                    var wildcardPkgs = pkgSearchResource.SearchAsync(name, searchFilter, 0, 6000, NullLogger.Instance, cancellationToken).GetAwaiter().GetResult();
+
+                    // If not searching for *all* packages
+                    if (!name.Equals("") && !name[0].Equals('*'))
+                    {
+                        char[] wildcardDelimiter = new char[] { '*' };
+                        var tokenizedName = name.Split(wildcardDelimiter, StringSplitOptions.RemoveEmptyEntries);
+
+                        //var startsWithWildcard = name[0].Equals('*') ? true : false;
+                        //var endsWithWildcard = name[name.Length-1].Equals('*') ? true : false;
+
+                        // 1)  *owershellge*
+                        if (name.StartsWith("*") && name.EndsWith("*"))
+                        {
+                            // filter results
+                            foundPackages.Add(wildcardPkgs.Where(p => p.Identity.Id.Contains(tokenizedName[0])));
+
+                            if (foundPackages.Flatten().Any())
+                            {
+                                pkgsLeftToFind.Remove(name);
+                            }
+                            // .Where(p => versionRange.Satisfies(p.Identity.Version))
+                            // .OrderByDescending(p => p.Identity.Version, VersionComparer.VersionRelease));
+
+                        }
+                        // 2)  *erShellGet
+                        else if (name.StartsWith("*"))
+                        {
+                            // filter results
+                            foundPackages.Add(wildcardPkgs.Where(p => p.Identity.Id.EndsWith(tokenizedName[0])));
+
+                            if (foundPackages.Flatten().Any())
+                            {
+                                pkgsLeftToFind.Remove(name);
+                            }
+                        }
+                        // if 1)  PowerShellG*
+                        else if (name.EndsWith("*"))
+                        {
+                            // filter results
+                            foundPackages.Add(wildcardPkgs.Where(p => p.Identity.Id.StartsWith(tokenizedName[0])));
+
+                            if (foundPackages.Flatten().Any())
+                            {
+                                pkgsLeftToFind.Remove(name);
+                            }
+                        }
+                        // 3)  Power*Get
+                        else if (tokenizedName.Length == 2)
+                        {
+                            // filter results
+                            foundPackages.Add(wildcardPkgs.Where(p => p.Identity.Id.StartsWith(tokenizedName[0]) && p.Identity.Id.EndsWith(tokenizedName[1])));
+
+                            if (foundPackages.Flatten().Any())
+                            {
+                                pkgsLeftToFind.Remove("*");
+                            }
+                        }
+                    }
+                    else 
+                    {
+                        foundPackages.Add(wildcardPkgs);
+                        pkgsLeftToFind.Remove("*");
+                    }
+
+
                 }
             }
             else
             {
+                /* can probably get rid of this */
                 foundPackages.Add(pkgSearchResource.SearchAsync("", searchFilter, 0, 6000, NullLogger.Instance, cancellationToken).GetAwaiter().GetResult());
                 //foundPackages = pkgSearchResource.SearchAsync("", searchFilter, 0, 6000, NullLogger.Instance, cancellationToken).GetAwaiter().GetResult();
             }
 
 
 
-            List<IEnumerable<IPackageSearchMetadata>> filteredFoundPkgs = new List<IEnumerable<IPackageSearchMetadata>>();
 
             // Check version first to narrow down the number of pkgs before potential searching through tags
             if (_version != null)
@@ -815,25 +1062,36 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                         .Where(p => versionRange.Satisfies(p.Identity.Version))
                         .OrderByDescending(p => p.Identity.Version, VersionComparer.VersionRelease));
 
+                    // TODO:  TEST AFTER CHANGES
                     // choose the most recent version -- it's not doing this right now
-                    int toRemove = foundPackages.First().Count() - 1;
-                    var singlePkg = (System.Linq.Enumerable.SkipLast(foundPackages.FirstOrDefault(), toRemove));
+                    //int toRemove = foundPackages.First().Count() - 1;
+                    //var singlePkg = (System.Linq.Enumerable.SkipLast(foundPackages.FirstOrDefault(), toRemove));
+                    var pkgList = foundPackages.FirstOrDefault();
+                    var singlePkg = Enumerable.Repeat(pkgList.FirstOrDefault(), 1);
+
                     filteredFoundPkgs.Add(singlePkg);
                 }
             }
             else // version is null
             {
-                // choose the most recent version -- it's not doing this right now
-                int toRemove = foundPackages.First().Count() - 1;
+                // if version is null, but there we want to return multiple packages (muliple names), skip over this step of removing all but the lastest package/version:
+                if (!name.Contains("*") && !name.Equals(""))
+                {
+                    // choose the most recent version -- it's not doing this right now
+                    int toRemove = foundPackages.First().Count() - 1;
 
-                // var result = ((IEnumerable)firstPkg).Cast<IPackageSearchMetadata>();
+                    // var result = ((IEnumerable)firstPkg).Cast<IPackageSearchMetadata>();
+                    // var bleh = foundPackages.FirstOrDefault().(System.Linq.Enumerable.SkipLast(foundPackages.FirstOrDefault(), 20));
+                    var pkgList = foundPackages.FirstOrDefault();
+                    var singlePkg = Enumerable.Repeat(pkgList.FirstOrDefault(), 1);
 
-                // var bleh = foundPackages.FirstOrDefault().(System.Linq.Enumerable.SkipLast(foundPackages.FirstOrDefault(), 20));
 
-                var bleh = (System.Linq.Enumerable.SkipLast(foundPackages.FirstOrDefault(), toRemove));
-
-                filteredFoundPkgs.Add(bleh);
-
+                    filteredFoundPkgs.Add(singlePkg);
+                }
+                else 
+                {
+                    filteredFoundPkgs = foundPackages;
+                }
             }
 
 
@@ -878,49 +1136,27 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
 
 
-
-            if (_type != null)
+            // optimizes searcching by 
+            if ((_type != null || !filteredFoundPkgs.Flatten().Any()) && pkgsLeftToFind.Any() && !_name.Contains("*"))
             {
-                // can optimize this more later
-                // this is handled
-                /*
-                if (_type.Contains("Command", StringComparer.OrdinalIgnoreCase))
-                {
-                    filteredFoundPkgs = FilterPkgsByResourceType(foundPackages, filteredFoundPkgs, "PSCommand_");
-                }
-
-                if (_type.Contains("DscResource", StringComparer.OrdinalIgnoreCase))
-                {
-                    filteredFoundPkgs = FilterPkgsByResourceType(foundPackages, filteredFoundPkgs, "PSDscResource_");
-                }
-
-                if (_type.Contains("RoleCapability", StringComparer.OrdinalIgnoreCase))
-                {
-                    filteredFoundPkgs = FilterPkgsByResourceType(foundPackages, filteredFoundPkgs, "PSRoleCapability_");
-                }
-
-                // module
-                if (_type.Contains("Module", StringComparer.OrdinalIgnoreCase))
+                //if ((_type.Contains("Module") || _type.Contains("Script")) && !_type.Contains("DscResource") && !_type.Contains("Command") && !_type.Contains("RoleCapability"))
+                if (_type == null || _type.Contains("DscResource") || _type.Contains("Command") || _type.Contains("RoleCapability"))
                 {
 
+                    if (!filteredFoundPkgs.Flatten().Any())
+                    {
+                        filteredFoundPkgs.Add(pkgSearchResource.SearchAsync("", searchFilter, 0, 6000, NullLogger.Instance, cancellationToken).GetAwaiter().GetResult());
+                    }
+
+                    var tempList = (FilterPkgsByResourceType(filteredFoundPkgs));
+                    filteredFoundPkgs.RemoveAll(p => true);
+
+                    filteredFoundPkgs.Add(tempList);
                 }
-                // script
-                if (_type.Contains("Script", StringComparer.OrdinalIgnoreCase))
-                {
-                    // PSScript
-                }
-                */
-
-
-                var tempList = (FilterPkgsByResourceType(foundPackages, filteredFoundPkgs));
-                filteredFoundPkgs.RemoveAll(p => true);
-
-                filteredFoundPkgs.Add(tempList);
-
 
             }
             // else type == null
-            // if type is null, we just don't filter on anything for type
+
 
 
 
@@ -1025,16 +1261,21 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
 
 
-        private List<IPackageSearchMetadata> FilterPkgsByResourceType(List<IEnumerable<IPackageSearchMetadata>> foundPackages, List<IEnumerable<IPackageSearchMetadata>> filteredFoundPkgs)
+        private List<IPackageSearchMetadata> FilterPkgsByResourceType(List<IEnumerable<IPackageSearchMetadata>> filteredFoundPkgs)
         {
 
 
             char[] delimiter = new char[] { ' ', ',' };
 
             // If there are any packages that were filtered by tags, we'll continue to filter on those packages, otherwise, we'll filter on all the packages returned from the search
-            var flattenedPkgs = filteredFoundPkgs.Any() ? filteredFoundPkgs.Flatten() : foundPackages.Flatten();
+            var flattenedPkgs = filteredFoundPkgs.Flatten();
 
             var pkgsFilteredByResource = new List<IPackageSearchMetadata>();
+
+            // if the type is null, we'll set it to check for everything except modules and scripts, since those types were already checked.
+            _type = _type == null ? new string[] { "DscResource", "RoleCapability", "Command" } : _type;
+            string[] pkgsToFind = new string[5];
+            pkgsLeftToFind.CopyTo(pkgsToFind);
 
             foreach (IPackageSearchMetadata pkg in flattenedPkgs)
             {
@@ -1046,6 +1287,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
                 foreach (var tag in tagArray)
                 {
+
 
                     // iterate through type array
                     foreach (var resourceType in _type)
@@ -1070,11 +1312,12 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                             case "Command":
                                 if (tag.StartsWith("PSCommand_"))
                                 {
-                                    foreach (var resourceName in _name)
+                                    foreach (var resourceName in pkgsToFind)
                                     {
-                                        if (tag.Equals("PSCommand_" + resourceName))
+                                        if (tag.Equals("PSCommand_" + resourceName, StringComparison.OrdinalIgnoreCase))
                                         {
                                             pkgsFilteredByResource.Add(pkg);
+                                            pkgsLeftToFind.Remove(resourceName);
 
                                         }
                                     }
@@ -1084,12 +1327,12 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                             case "DscResource":
                                 if (tag.StartsWith("PSDscResource_"))
                                 {
-                                    foreach (var resourceName in _name)
+                                    foreach (var resourceName in pkgsToFind)
                                     {
-                                        if (tag.Equals("PSDscResource_" + resourceName))
+                                        if (tag.Equals("PSDscResource_" + resourceName, StringComparison.OrdinalIgnoreCase))
                                         {
                                             pkgsFilteredByResource.Add(pkg);
-
+                                            pkgsLeftToFind.Remove(resourceName);
                                         }
                                     }
                                 }
@@ -1098,12 +1341,12 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                             case "RoleCapability":
                                 if (tag.StartsWith("PSRoleCapability_"))
                                 {
-                                    foreach (var resourceName in _name)
+                                    foreach (var resourceName in pkgsToFind)
                                     {
-                                        if (tag.Equals("PSRoleCapability_" + resourceName))
+                                        if (tag.Equals("PSRoleCapability_" + resourceName, StringComparison.OrdinalIgnoreCase))
                                         {
                                             pkgsFilteredByResource.Add(pkg);
-
+                                            pkgsLeftToFind.Remove(resourceName);
                                         }
                                     }
                                 }
@@ -1114,7 +1357,9 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                 }
             }
 
-            return pkgsFilteredByResource;
+  
+
+            return pkgsFilteredByResource.DistinctBy(p => p.Identity.Id).ToList();
 
         }
 
@@ -1123,5 +1368,83 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
 
 
 
+
+
+
+
+
+
+
+
+        private static async Task<Uri> GetCatalogIndexUrlAsync(string sourceUrl)
+        {
+            // This code uses the NuGet client SDK, which are the libraries used internally by the official
+            // NuGet client.
+            var sourceRepository = NuGet.Protocol.Core.Types.Repository.Factory.GetCoreV3(sourceUrl);
+            var serviceIndex = await sourceRepository.GetResourceAsync<ServiceIndexResourceV3>();
+            var catalogIndexUrl = serviceIndex.GetServiceEntryUri("Catalog/3.0.0");
+
+
+
+            return catalogIndexUrl;
+        }
+
+
+
+        ///  Modified this
+        private static DateTime GetCursor()
+        {
+            /*
+            try
+            {
+                var cursorString = File.ReadAllText(CursorFileName);
+                var cursor = JsonConvert.DeserializeObject<FileCursor>(cursorString);
+                var cursorValue = cursor.GetAsync().GetAwaiter().GetResult().GetValueOrDefault();
+                DateTime cursorValueDateTime = DateTime.MinValue;
+                if (cursorValue != null)
+                {
+                    cursorValueDateTime = cursorValue.DateTime;
+                }
+                Console.WriteLine($"Read cursor value: {cursorValueDateTime}.");
+                return cursorValueDateTime;
+            }
+            catch (FileNotFoundException)
+            {
+            */
+                var value = DateTime.MinValue;
+                Console.WriteLine($"No cursor found. Defaulting to {value}.");
+                return value;
+           // }
+        }
+
+
+        private static void ProcessCatalogLeaf(CatalogLeafItem leaf)
+        {
+            // Here, you can do whatever you want with each catalog item. If you want the full metadata about
+            // the catalog leaf, you can use the leafItem.Url property to fetch the full leaf document. In this case,
+            // we'll just keep it simple and output the details about the leaf that are included in the catalog page.
+            // example: Console.WriteLine($"{leaf.CommitTimeStamp}: {leaf.Id} {leaf.Version} (type is {leaf.Type})");
+
+            Console.WriteLine($"{leaf.CommitTimestamp}: {leaf.PackageId} {leaf.PackageVersion} (type is {leaf.Type})");
+        }
+
+        private static void SetCursor(DateTime value)
+        {
+            Console.WriteLine($"Writing cursor value: {value}.");
+            var cursorString = JsonConvert.SerializeObject(new Cursor { Value = value });
+            File.WriteAllText(CursorFileName, cursorString);
+        }
+
+
+
+
+
+    }
+
+
+    public class Cursor
+    {
+        [JsonProperty("value")]
+        public DateTime Value { get; set; }
     }
 }
