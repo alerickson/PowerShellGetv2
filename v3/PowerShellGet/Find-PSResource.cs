@@ -64,7 +64,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
             set
             { _name = value; }
         }
-        private string[] _name; // = new string[0];
+        private string[] _name = new string[0];
 
         /// <summary>
         /// Specifies the type of the resource to be searched for.
@@ -215,9 +215,17 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
             foreach (var repoName in listOfRepositories)
             {
 
-                // if using v3 endpoint 
-                // TODO:  add wildcard condition here
-                ProcessCatalogReader(repoName.Properties["Name"].Value.ToString(), repoName.Properties["Url"].Value.ToString()); 
+                // We'll need to use the catalog reader when enumerating through all packages under v3 protocol.
+                // if using v3 endpoint and there's no exact name specified (ie no name specified or a name with a wildcard is specified)
+                if (repoName.Properties["Url"].Value.ToString().EndsWith("/v3/index.json") && 
+                    (_name.Length == 0 || _name.Any(n => n.Contains("*"))))//_name.Contains("*")))  /// TEST THIS!!!!!!!
+                {
+                    // right now you can use wildcards with an array of names, ie -name "Az*", "PS*", "*Get", will take a hit performance wise, though.
+                    // TODO:  add wildcard condition here
+                    ProcessCatalogReader(repoName.Properties["Name"].Value.ToString(), repoName.Properties["Url"].Value.ToString());
+                }
+
+
 
                 // if it can't find the pkg in one repository, it'll look in the next one in the list
                 // returns any pkgs found, and any pkgs that weren't found
@@ -266,18 +274,11 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
             // we want all packages published from the beginning of time
             //       DateTime cursor = DateTime.MinValue;
 
-            //2)  using the @id proper
 
-            /////////  NEW CODE
-            ///// Use nuget.org's V3 package source URL, a.k.a. the service index.
-           // var sourceUrl = "https://api.nuget.org/v3/index.json";
 
             // Define a lower time bound for leaves to fetch. This exclusive minimum time bound is called the cursor.
             //var cursor = DateTime.MinValue;   /// come back to this GetCursor();
             var cursor = GetCursor();     // come back to this
-
-
-
 
             // Discover the catalog index URL from the service index.
             var catalogIndexUrl = GetCatalogIndexUrlAsync(sourceUrl).GetAwaiter().GetResult();
@@ -345,14 +346,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                 Console.WriteLine($"Processing {allLeafItems.Count} catalog leaves.");
                 foreach (var leafItem in allLeafItems)
                 {
-                    // TODO:  FILTER BASED ON INPUT!!!!!!!!!!!!!  TAGS, ETC.
-
-
-                    // ProcessCatalogLeaf(leafItem, );
-
-                    //_name = new string[] { leafItem.PackageId };
                     _version = leafItem.PackageVersion;
-
 
                     IEnumerable<IPackageSearchMetadata> foundPkgs;
                     if (sourceUrl.StartsWith("file://"))
@@ -364,16 +358,16 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                         foundPkgs = FindPackagesFromSourceHelper(sourceUrl, leafItem.PackageId, resourceSearch, resourceMetadata, filter, context).FirstOrDefault();
                     }
 
-                    if (foundPkgs.Any())
+                    // var foundPkgsFlattened = foundPkgs.Flatten();
+                    foreach(var pkg in foundPkgs)
                     {
                         // First or default to convert the ienumeraable object into just an IPackageSearchmetadata object
-                        var pkgToOutput = foundPkgs.FirstOrDefault();//foundPkgs.Cast<IPackageSearchMetadata>();
-
+                       // var pkgToOutput = foundPkgs.FirstOrDefault();//foundPkgs.Cast<IPackageSearchMetadata>();
                         PSObject pkgAsPSObject = new PSObject();
-                        pkgAsPSObject.Members.Add(new PSNoteProperty("Name", pkgToOutput.Identity.Id));
-                        pkgAsPSObject.Members.Add(new PSNoteProperty("Version", pkgToOutput.Identity.Version));
+                        pkgAsPSObject.Members.Add(new PSNoteProperty("Name", pkg.Identity.Id));
+                        pkgAsPSObject.Members.Add(new PSNoteProperty("Version", pkg.Identity.Version));
                         pkgAsPSObject.Members.Add(new PSNoteProperty("Repository", repoName));
-                        pkgAsPSObject.Members.Add(new PSNoteProperty("Description", pkgToOutput.Description));
+                        pkgAsPSObject.Members.Add(new PSNoteProperty("Description", pkg.Description));
                         
                         WriteObject(pkgAsPSObject);
                     }
@@ -381,26 +375,6 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
                 }
 
             }
-
-            /*
-            allLeafItems = allLeafItems
-                .OrderBy(x => x.CommitTimestamp)
-                .ToList();pws
-            */
-
-          
-
-
-            /*
-            // If we have processed any items, write the new cursor.
-            if (allLeafItems.Any())
-            {
-                var newCursor = allLeafItems.Max(x => x.CommitTimestamp);
-                SetCursor(newCursor.DateTime);
-            }
-            */
-
-
 
         }
 
@@ -1075,7 +1049,7 @@ namespace Microsoft.PowerShell.PowerShellGet.Cmdlets
             else // version is null
             {
                 // if version is null, but there we want to return multiple packages (muliple names), skip over this step of removing all but the lastest package/version:
-                if (!name.Contains("*") && !name.Equals(""))
+                if ((name != null && !name.Contains("*")) || _moduleName != null)
                 {
                     // choose the most recent version -- it's not doing this right now
                     int toRemove = foundPackages.First().Count() - 1;
