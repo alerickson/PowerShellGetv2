@@ -10,7 +10,7 @@ variables:
 
 stages:
 - stage: Build
-  displayName: Build Native Binaries
+  displayName: Build PowerShellGet
   dependsOn: []
   jobs:
   - job: BuildWin
